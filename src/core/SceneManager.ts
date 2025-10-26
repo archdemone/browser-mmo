@@ -33,9 +33,10 @@ export class SceneManager {
   private async setActiveScene(scene: SceneBase, engine: Engine): Promise<void> {
     if (this.activeScene) {
       this.activeScene.dispose();
+      this.activeScene = null;
     }
 
-    this.activeScene = scene;
     await scene.load(engine);
+    this.activeScene = scene;
   }
 }
