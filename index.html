@@ -3,27 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Browser ARPG Prototype</title>
+    <title>poe3</title>
     <style>
-      html,
-      body {
-        width: 100%;
-        height: 100%;
+      html, body {
         margin: 0;
-        overflow: hidden;
+        padding: 0;
         background: #000;
+        overflow: hidden;
+        height: 100%;
+        width: 100%;
       }
 
       #renderCanvas {
-        width: 100%;
-        height: 100%;
-        touch-action: none;
+        width: 100vw;
+        height: 100vh;
         display: block;
       }
     </style>
   </head>
   <body>
     <canvas id="renderCanvas"></canvas>
+
+    <!-- Vite entry point -->
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
