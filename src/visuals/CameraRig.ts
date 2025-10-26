@@ -1,20 +1,19 @@
-import { ArcRotateCamera, Vector3 } from "babylonjs";
-import type { Player } from "../gameplay/Player";
+import { ArcRotateCamera, TransformNode, Vector3 } from "babylonjs";
 
 /**
  * Maintains an isometric follow camera rig locked to the player.
  */
 export class CameraRig {
   private readonly camera: ArcRotateCamera;
-  private readonly player: Player;
+  private readonly target: TransformNode;
   private readonly alpha: number;
   private readonly beta: number;
   private readonly radius: number;
   private readonly targetOffset: Vector3;
 
-  constructor(camera: ArcRotateCamera, player: Player) {
+  constructor(camera: ArcRotateCamera, target: TransformNode) {
     this.camera = camera;
-    this.player = player;
+    this.target = target;
     this.alpha = Math.PI / 4;
     this.beta = Math.PI / 3;
     this.radius = 15;
@@ -33,10 +32,12 @@ export class CameraRig {
    * Update the camera to follow the player each frame.
    */
   update(): void {
-    const playerPosition: Vector3 = this.player.getPosition().add(this.targetOffset);
+    const playerPosition: Vector3 = this.target.getAbsolutePosition().add(this.targetOffset);
     this.camera.alpha = this.alpha;
     this.camera.beta = this.beta;
     this.camera.radius = this.radius;
     this.camera.setTarget(playerPosition);
   }
+
+  // TODO: Add camera shake effects and smooth dampening/lerp options for future polish.
 }
