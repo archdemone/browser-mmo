@@ -1,22 +1,84 @@
-import { SceneBase } from "./SceneBase";
+import {
+  ArcRotateCamera,
+  Color3,
+  Color4,
+  Engine,
+  HemisphericLight,
+  MeshBuilder,
+  Scene,
+  Vector3,
+} from "babylonjs";
+import { Input } from "../core/Input";
+import type { SceneBase } from "./SceneBase";
+import { Player } from "../gameplay/Player";
+import { CameraRig } from "../visuals/CameraRig";
 
-export class DungeonScene extends SceneBase {
-  // TODO: Spawn the player runtime actor using PlayerProfile stats.
-  // TODO: Attach CameraRig to follow the player in the dungeon.
-  // TODO: Spawn enemies appropriate for the dungeon depth/seed.
-  // TODO: Run CombatSystem and AbilitySystem logic each frame.
-  // TODO: Award XP and loot, updating the PlayerProfile as encounters resolve.
+/**
+ * Dungeon scene placeholder responsible for player control and camera setup.
+ */
+export class DungeonScene implements SceneBase {
+  private scene: Scene | null = null;
+  private input: Input | null = null;
+  private player: Player | null = null;
+  private cameraRig: CameraRig | null = null;
 
-  async load(): Promise<void> {
-    // TODO: Set up dungeon environment, navmesh, and enemy spawners.
+  // TODO: Populate the dungeon with enemies, loot, and interactions in future milestones.
+
+  /**
+   * Create Babylon entities for the dungeon scene.
+   */
+  load(engine: Engine): void {
+    this.scene = new Scene(engine);
+    this.scene.clearColor = new Color4(0.02, 0.02, 0.02, 1);
+
+    const light: HemisphericLight = new HemisphericLight("hemi", new Vector3(0, 1, 0), this.scene);
+    light.intensity = 0.9;
+    light.specular = Color3.Black();
+
+    MeshBuilder.CreateGround("ground", { width: 50, height: 50 }, this.scene);
+
+    this.input = new Input();
+    this.player = new Player(this.scene);
+
+    const camera: ArcRotateCamera = new ArcRotateCamera(
+      "isoCamera",
+      Math.PI / 4,
+      Math.PI / 3,
+      20,
+      new Vector3(0, 0, 0),
+      this.scene,
+      true
+    );
+
+    this.scene.activeCamera = camera;
+
+    this.cameraRig = new CameraRig(camera, this.player);
+    this.cameraRig.update();
   }
 
   update(deltaTime: number): void {
-    void deltaTime;
-    // TODO: Tick combat, abilities, AI, and loot drops.
+    if (!this.scene || !this.input || !this.player || !this.cameraRig) {
+      return;
+    }
+
+    this.player.update(deltaTime, this.input);
+    this.cameraRig.update();
+  }
+
+  getScene(): Scene {
+    if (!this.scene) {
+      throw new Error("DungeonScene has not been loaded yet.");
+    }
+
+    return this.scene;
   }
 
   dispose(): void {
-    // TODO: Clean up dungeon-specific entities and resources.
+    this.input?.dispose();
+    this.scene?.dispose();
+    this.scene = null;
+    this.input = null;
+    this.player = null;
+    this.cameraRig = null;
   }
 }

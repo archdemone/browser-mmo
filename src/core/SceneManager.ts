@@ -1,32 +1,42 @@
-import type { HideoutScene } from "../scenes/HideoutScene";
-import type { DungeonScene } from "../scenes/DungeonScene";
+import type { Engine, Scene } from "babylonjs";
+import { DungeonScene } from "../scenes/DungeonScene";
+import type { SceneBase } from "../scenes/SceneBase";
 
-export interface SceneController {
-  load(): Promise<void> | void;
-  update(deltaTime: number): void;
-  dispose(): void;
-}
-
-// TODO: Manage transitions between HideoutScene and DungeonScene, handling save/load boundaries.
+/**
+ * Central coordinator for high-level scene transitions.
+ */
 export class SceneManager {
-  private currentScene: SceneController | null = null;
+  private activeScene: SceneBase | null = null;
 
-  // TODO: Keep references or factories for HideoutScene and DungeonScene here.
-  private hideoutScene: HideoutScene | null = null;
-  private dungeonScene: DungeonScene | null = null;
+  /**
+   * Transition into the dungeon scene.
+   */
+  async goToDungeon(engine: Engine): Promise<void> {
+    const newScene: DungeonScene = new DungeonScene();
+    await this.setActiveScene(newScene, engine);
+  }
 
-  async switchTo(scene: SceneController): Promise<void> {
-    if (this.currentScene) {
-      this.currentScene.dispose();
+  /**
+   * Retrieve the currently active Babylon scene for rendering.
+   */
+  getActiveScene(): Scene | null {
+    return this.activeScene ? this.activeScene.getScene() : null;
+  }
+
+  /**
+   * Propagate per-frame updates to the active scene.
+   */
+  update(deltaTime: number): void {
+    this.activeScene?.update(deltaTime);
+  }
+
+  private async setActiveScene(scene: SceneBase, engine: Engine): Promise<void> {
+    if (this.activeScene) {
+      this.activeScene.dispose();
+      this.activeScene = null;
     }
 
-    this.currentScene = scene;
-    await scene.load();
+    await scene.load(engine);
+    this.activeScene = scene;
   }
-
-  update(deltaTime: number): void {
-    this.currentScene?.update(deltaTime);
-  }
-
-  // TODO: Implement helpers to go from hideout → dungeon → hideout with state handoff.
 }

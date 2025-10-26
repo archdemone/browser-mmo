@@ -1,8 +1,11 @@
-// Base class for Babylon scenes in this game.
-// TODO: Provide shared references to engine, scene graph, and common services.
+import type { Engine, Scene } from "babylonjs";
 
-export abstract class SceneBase {
-  abstract load(): Promise<void> | void;
-  abstract update(deltaTime: number): void;
-  abstract dispose(): void;
+/**
+ * Shared contract for gameplay scenes rendered by the engine.
+ */
+export interface SceneBase {
+  load(engine: Engine): Promise<void> | void;
+  update(deltaTime: number): void;
+  getScene(): Scene;
+  dispose(): void;
 }
