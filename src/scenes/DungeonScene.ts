@@ -27,7 +27,7 @@ export class DungeonScene implements SceneBase {
   /**
    * Create Babylon entities for the dungeon scene.
    */
-  load(engine: Engine): void {
+  async load(engine: Engine): Promise<void> {
     this.scene = new Scene(engine);
     this.scene.clearColor = new Color4(0.02, 0.02, 0.02, 1);
 
@@ -38,7 +38,7 @@ export class DungeonScene implements SceneBase {
     MeshBuilder.CreateGround("ground", { width: 50, height: 50 }, this.scene);
 
     this.input = new Input();
-    this.player = new Player(this.scene);
+    this.player = await Player.createAsync(this.scene, this.input);
 
     const camera: ArcRotateCamera = new ArcRotateCamera(
       "isoCamera",
@@ -52,7 +52,7 @@ export class DungeonScene implements SceneBase {
 
     this.scene.activeCamera = camera;
 
-    this.cameraRig = new CameraRig(camera, this.player);
+    this.cameraRig = new CameraRig(camera, this.player.getMesh());
     this.cameraRig.update();
   }
 
@@ -61,7 +61,7 @@ export class DungeonScene implements SceneBase {
       return;
     }
 
-    this.player.update(deltaTime, this.input);
+    this.player.update(deltaTime);
     this.cameraRig.update();
   }
 
@@ -81,4 +81,7 @@ export class DungeonScene implements SceneBase {
     this.player = null;
     this.cameraRig = null;
   }
+
+  // TODO: Spawn enemies, integrate CombatSystem, and drop loot once those systems are ready.
+  // TODO: Award experience to the PlayerProfile and persist data using the SaveService.
 }
