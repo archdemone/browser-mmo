@@ -21,6 +21,7 @@ export class PlayerAnimator {
   private currentLocomotion: LocomotionState;
   private activeOneShot: Nullable<AnimationGroup> = null;
   private oneShotObserver: Nullable<Observer<AnimationGroup>> = null;
+  private lastLocomotionRequest: LocomotionState | null = null;
 
   constructor(groups: PlayerAnimatorGroups) {
     this.locomotionGroups = {
@@ -42,6 +43,7 @@ export class PlayerAnimator {
     this.desiredLocomotion = "idle";
     this.currentLocomotion = "idle";
     this.stopAllLocomotion();
+    this.logLocomotionRequest("idle");
     this.playLocomotion("idle");
   }
 
@@ -61,6 +63,7 @@ export class PlayerAnimator {
     }
 
     this.desiredLocomotion = target;
+    this.logLocomotionRequest(target);
 
     if (this.activeOneShot) {
       return;
@@ -73,6 +76,7 @@ export class PlayerAnimator {
    * Plays the dodge roll animation as a one-shot override.
    */
   playDodgeRoll(): void {
+    console.log("[PlayerAnimator] Request dodge roll");
     this.playOneShot(this.dodgeGroup);
     // TODO: During the dodge animation, apply a burst of movement and temporary invulnerability.
   }
@@ -81,6 +85,7 @@ export class PlayerAnimator {
    * Plays the attack animation as a one-shot override.
    */
   playAttack(): void {
+    console.log("[PlayerAnimator] Request attack");
     this.playOneShot(this.attackGroup);
     // TODO: Trigger the CombatSystem damage application when the attack connects.
   }
@@ -143,5 +148,14 @@ export class PlayerAnimator {
 
     this.activeOneShot.stop();
     this.activeOneShot = null;
+  }
+
+  private logLocomotionRequest(state: LocomotionState): void {
+    if (this.lastLocomotionRequest === state) {
+      return;
+    }
+
+    console.log(`[PlayerAnimator] Request ${state} locomotion`);
+    this.lastLocomotionRequest = state;
   }
 }

@@ -31,6 +31,7 @@ export class Player {
    */
   static async createAsync(scene: Scene, input: Input): Promise<Player> {
     const { rootMesh, animator } = await createPlayerCharacter(scene);
+    console.log("[Player] createAsync() complete - animator ready");
     return new Player(rootMesh, animator, input);
   }
 

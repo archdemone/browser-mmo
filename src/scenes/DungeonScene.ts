@@ -54,6 +54,8 @@ export class DungeonScene implements SceneBase {
 
     this.cameraRig = new CameraRig(camera, this.player.getMesh());
     this.cameraRig.update();
+
+    console.log("[DungeonScene] load() complete");
   }
 
   update(deltaTime: number): void {
