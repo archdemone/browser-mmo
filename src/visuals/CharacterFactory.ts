@@ -1,4 +1,4 @@
-import type { AnimationGroup, ISceneLoaderAsyncResult, Scene, TransformNode } from "babylonjs";
+import type { AnimationGroup, IAnimatable, ISceneLoaderAsyncResult, Node, Scene, TransformNode } from "babylonjs";
 import { SceneLoader } from "babylonjs";
 import "babylonjs-loaders";
 import { PlayerAnimator } from "./PlayerAnimator";
@@ -35,23 +35,57 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
 
   const rootMesh = (baseResult.meshes.find((mesh) => !mesh.parent) ?? baseResult.meshes[0]) as TransformNode;
 
+  // Build a lookup for retargeting by node name within the base character hierarchy only
+  const baseNodeByName = new Map<string, Node>();
+  const collectNodes = (node: Node): void => {
+    if (!node) return;
+    if (node.name) baseNodeByName.set(node.name, node);
+    const children = (node as TransformNode).getChildren?.() ?? [];
+    for (const c of children) collectNodes(c as unknown as Node);
+  };
+  collectNodes(rootMesh as unknown as Node);
+
+  const retarget = (oldTarget: IAnimatable): IAnimatable | null => {
+    const name = (oldTarget as unknown as { name?: string }).name ?? "";
+    return (baseNodeByName.get(name) as unknown as IAnimatable) ?? null;
+  };
+
+  // Helper to import animation-only GLBs, retarget their groups to the base, and dispose temporary nodes
+  const importAndRetarget = async (url: string): Promise<AnimationGroup[]> => {
+    const res = await SceneLoader.ImportMeshAsync("", "", url, scene);
+    const clones: AnimationGroup[] = [];
+    for (const ag of res.animationGroups) {
+      const clone = ag.clone(ag.name, retarget);
+      clones.push(clone);
+      ag.dispose();
+    }
+    // Dispose imported meshes/nodes so duplicates do not remain visible
+    for (const m of res.meshes) {
+      if (m !== rootMesh) m.dispose(true, true);
+    }
+    for (const tn of res.transformNodes) {
+      if (tn !== rootMesh) tn.dispose(true, true);
+    }
+    return clones;
+  };
+
   // Attempt to load locomotion and action clips. Missing optional clips must not crash.
-  await SceneLoader.AppendAsync("", playerIdleUrl, scene);
-  await SceneLoader.AppendAsync("", playerRunUrl, scene);
+  await importAndRetarget(playerIdleUrl);
+  await importAndRetarget(playerRunUrl);
 
   // Optional clips: try/catch to avoid breaking load when missing in dev
   try {
-    await SceneLoader.AppendAsync("", playerSprintUrl, scene);
+    await importAndRetarget(playerSprintUrl);
   } catch (e) {
     console.warn("[QA] Missing sprint animation clip, will fall back to run.", e);
   }
   try {
-    await SceneLoader.AppendAsync("", playerDodgeUrl, scene);
+    await importAndRetarget(playerDodgeUrl);
   } catch (e) {
     console.warn("[QA] Missing dodge animation clip; dodge will be unavailable.", e);
   }
   try {
-    await SceneLoader.AppendAsync("", playerAttackUrl, scene);
+    await importAndRetarget(playerAttackUrl);
   } catch (e) {
     console.warn("[QA] Missing attack animation clip; attack will be unavailable.", e);
   }
