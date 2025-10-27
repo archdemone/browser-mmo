@@ -61,12 +61,20 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
     return scene.animationGroups.find((group) => group.name.toLowerCase().includes(lowerKeyword));
   };
 
-  const idleGroup = findGroup("idle") ?? null;
-  const runGroup = findGroup("run") ?? null;
+  let idleGroup = findGroup("idle") ?? null;
+  let runGroup = findGroup("run") ?? null;
   let sprintGroup = findGroup("sprint") ?? null;
   const dodgeGroup = findGroup("dodge") ?? null;
   const attackGroup = findGroup("attack") ?? null;
 
+  if (!idleGroup || !runGroup) {
+    if (scene.animationGroups.length > 0) {
+      const fallback = scene.animationGroups[0] ?? null;
+      if (!idleGroup) idleGroup = fallback;
+      if (!runGroup) runGroup = fallback;
+      console.warn("[QA] Could not match idle/run by name; falling back to first available animation group.");
+    }
+  }
   if (!idleGroup || !runGroup) {
     throw new Error("Failed to produce required idle+run animation groups.");
   }
