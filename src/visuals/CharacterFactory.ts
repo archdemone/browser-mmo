@@ -118,9 +118,31 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
     console.warn("[QA] Missing attack animation clip; attack will be unavailable.", e);
   }
 
+    // Heuristic name matcher: supports common Mixamo/variant terms
   const findGroup = (keyword: string): AnimationGroup | undefined => {
     const lowerKeyword = keyword.toLowerCase();
-    return scene.animationGroups.find((group) => group.name.toLowerCase().includes(lowerKeyword));
+    const synonyms: Record<string, string[]> = {
+      idle: ["idle", "stand", "rest", "breath"],
+      run: ["run", "jog", "move", "walk"],
+      sprint: ["sprint", "run_fast", "dash", "fast"],
+      dodge: ["dodge", "roll", "evade", "tumble"],
+      attack: ["attack", "slash", "swing", "strike", "punch"],
+    };
+
+    const candidates = synonyms[lowerKeyword] ?? [lowerKeyword];
+    const groups = scene.animationGroups;
+
+    // Prefer exact label match first (we relabeled cloned groups to canonical names)
+    const exact = groups.find((g) => g.name.toLowerCase() === lowerKeyword);
+    if (exact) return exact;
+
+    // Then try synonyms by substring
+    for (const term of candidates) {
+      const hit = groups.find((g) => g.name.toLowerCase().includes(term));
+      if (hit) return hit;
+    }
+
+    return undefined;
   };
 
   let idleGroup = findGroup("idle") ?? null;
@@ -159,3 +181,4 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
   // TODO: Centralize animation group naming conventions to avoid brittle lookups.
   // TODO: Validate skeleton compatibility before binding animations.
 }
+

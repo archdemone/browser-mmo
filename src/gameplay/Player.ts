@@ -13,6 +13,14 @@ export class Player {
   private readonly input: Input;
   private readonly moveSpeedRun: number;
   private readonly moveSpeedSprint: number;
+  private readonly rotationSpeed: number;
+
+  // Dodge state
+  private dodgeActive: boolean = false;
+  private dodgeTimeRemaining: number = 0;
+  private dodgeDuration: number = 0.45; // seconds
+  private dodgeDistance: number = 4; // meters per dodge
+  private dodgeDirection: Vector3 = new Vector3(0, 0, 1);
 
   private constructor(mesh: TransformNode, animator: PlayerAnimator, input: Input) {
     this.mesh = mesh;
@@ -24,6 +32,7 @@ export class Player {
     this.input = input;
     this.moveSpeedRun = 5;
     this.moveSpeedSprint = 8;
+    this.rotationSpeed = 12; // rad/s
   }
 
   /**
@@ -81,3 +90,4 @@ export class Player {
     return this.mesh.getAbsolutePosition();
   }
 }
+
