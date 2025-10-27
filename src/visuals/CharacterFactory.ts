@@ -35,6 +35,11 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
 
   const rootMesh = (baseResult.meshes.find((mesh) => !mesh.parent) ?? baseResult.meshes[0]) as TransformNode;
   const baseSkeleton = (baseResult.skeletons && baseResult.skeletons[0]) ? baseResult.skeletons[0] : null;
+  // Stop and dispose any animation groups that came with the base model to avoid auto-play conflicts
+  for (const g of baseResult.animationGroups ?? []) {
+    try { g.stop(); } catch {}
+    g.dispose();
+  }
 
   // Build a lookup for retargeting by node name within the base character hierarchy only
   const baseNodeByName = new Map<string, Node>();
