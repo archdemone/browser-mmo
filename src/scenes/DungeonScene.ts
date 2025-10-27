@@ -57,6 +57,9 @@ export class DungeonScene implements SceneBase {
     this.cameraRig = new CameraRig(this.scene, followTarget);
     this.cameraRig.update();
 
+    // Expose for QA/debug in dev tools
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__scene = this.scene;
     console.log("[QA] DungeonScene loaded without throwing");
   }
 

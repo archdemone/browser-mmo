@@ -1,5 +1,5 @@
 import type { AnimationGroup, IAnimatable, ISceneLoaderAsyncResult, Node, Scene, TransformNode } from "babylonjs";
-import { SceneLoader } from "babylonjs";
+import { Bone, SceneLoader } from "babylonjs";
 import "babylonjs-loaders";
 import { PlayerAnimator } from "./PlayerAnimator";
 
@@ -34,9 +34,11 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
   const baseResult: ISceneLoaderAsyncResult = await SceneLoader.ImportMeshAsync("", "", playerBaseUrl, scene);
 
   const rootMesh = (baseResult.meshes.find((mesh) => !mesh.parent) ?? baseResult.meshes[0]) as TransformNode;
+  const baseSkeleton = (baseResult.skeletons && baseResult.skeletons[0]) ? baseResult.skeletons[0] : null;
 
   // Build a lookup for retargeting by node name within the base character hierarchy only
   const baseNodeByName = new Map<string, Node>();
+  const baseBoneByName = new Map<string, Bone>();
   const collectNodes = (node: Node): void => {
     if (!node) return;
     if (node.name) baseNodeByName.set(node.name, node);
@@ -44,10 +46,26 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
     for (const c of children) collectNodes(c as unknown as Node);
   };
   collectNodes(rootMesh as unknown as Node);
+  if (baseSkeleton) {
+    for (const b of baseSkeleton.bones) {
+      if (b.name) baseBoneByName.set(b.name, b);
+    }
+  }
 
   const retarget = (oldTarget: IAnimatable): IAnimatable | null => {
-    const name = (oldTarget as unknown as { name?: string }).name ?? "";
-    return (baseNodeByName.get(name) as unknown as IAnimatable) ?? null;
+    const anyTarget = oldTarget as unknown as { name?: string; getClassName?: () => string };
+    const name = anyTarget.name ?? "";
+    const className = anyTarget.getClassName ? anyTarget.getClassName() : "";
+
+    // Map Bones by name to the base skeleton bones
+    if (className === "Bone" && baseSkeleton) {
+      const bone = baseBoneByName.get(name);
+      return (bone as unknown as IAnimatable) ?? null;
+    }
+
+    // Map TransformNodes/Nodes by name into the base character hierarchy
+    const node = baseNodeByName.get(name);
+    return (node as unknown as IAnimatable) ?? null;
   };
 
   // Helper to import animation-only GLBs, retarget their groups to the base, and dispose temporary nodes
@@ -65,6 +83,10 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
     }
     for (const tn of res.transformNodes) {
       if (tn !== rootMesh) tn.dispose(true, true);
+    }
+    // Dispose imported skeletons as well to avoid duplicates lingering
+    for (const s of res.skeletons ?? []) {
+      s.dispose();
     }
     return clones;
   };
