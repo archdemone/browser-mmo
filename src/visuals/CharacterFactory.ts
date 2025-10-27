@@ -69,11 +69,12 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
   };
 
   // Helper to import animation-only GLBs, retarget their groups to the base, and dispose temporary nodes
-  const importAndRetarget = async (url: string): Promise<AnimationGroup[]> => {
+  const importAndRetarget = async (url: string, label: string): Promise<AnimationGroup[]> => {
     const res = await SceneLoader.ImportMeshAsync("", "", url, scene);
     const clones: AnimationGroup[] = [];
     for (const ag of res.animationGroups) {
-      const clone = ag.clone(ag.name, retarget);
+      const clone = ag.clone(`${label}`, retarget);
+      clone.stop();
       clones.push(clone);
       ag.dispose();
     }
@@ -92,22 +93,22 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
   };
 
   // Attempt to load locomotion and action clips. Missing optional clips must not crash.
-  await importAndRetarget(playerIdleUrl);
-  await importAndRetarget(playerRunUrl);
+  await importAndRetarget(playerIdleUrl, "idle");
+  await importAndRetarget(playerRunUrl, "run");
 
   // Optional clips: try/catch to avoid breaking load when missing in dev
   try {
-    await importAndRetarget(playerSprintUrl);
+    await importAndRetarget(playerSprintUrl, "sprint");
   } catch (e) {
     console.warn("[QA] Missing sprint animation clip, will fall back to run.", e);
   }
   try {
-    await importAndRetarget(playerDodgeUrl);
+    await importAndRetarget(playerDodgeUrl, "dodge");
   } catch (e) {
     console.warn("[QA] Missing dodge animation clip; dodge will be unavailable.", e);
   }
   try {
-    await importAndRetarget(playerAttackUrl);
+    await importAndRetarget(playerAttackUrl, "attack");
   } catch (e) {
     console.warn("[QA] Missing attack animation clip; attack will be unavailable.", e);
   }
