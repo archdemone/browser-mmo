@@ -1,0 +1,34 @@
+*** Begin Patch
+*** Update File: src/visuals/CharacterFactory.ts
+@@
+-  const findGroup = (keyword: string): AnimationGroup | undefined => {
+-    const lowerKeyword = keyword.toLowerCase();
+-    return scene.animationGroups.find((group) => group.name.toLowerCase().includes(lowerKeyword));
+-  };
++  // Heuristic name matcher: supports common Mixamo/variant terms
++  const findGroup = (keyword: string): AnimationGroup | undefined => {
++    const lowerKeyword = keyword.toLowerCase();
++    const synonyms: Record<string, string[]> = {
++      idle: ["idle", "stand", "rest", "breath"],
++      run: ["run", "jog", "move", "walk"],
++      sprint: ["sprint", "run_fast", "dash", "fast"],
++      dodge: ["dodge", "roll", "evade", "tumble"],
++      attack: ["attack", "slash", "swing", "strike", "punch"],
++    };
++
++    const candidates = synonyms[lowerKeyword] ?? [lowerKeyword];
++    const groups = scene.animationGroups;
++
++    // Prefer exact label match first (we relabeled cloned groups to canonical names)
++    const exact = groups.find((g) => g.name.toLowerCase() === lowerKeyword);
++    if (exact) return exact;
++
++    // Then try synonyms by substring
++    for (const term of candidates) {
++      const hit = groups.find((g) => g.name.toLowerCase().includes(term));
++      if (hit) return hit;
++    }
++
++    return undefined;
++  };
+*** End Patch
