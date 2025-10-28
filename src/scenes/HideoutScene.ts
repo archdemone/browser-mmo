@@ -900,8 +900,13 @@ export class HideoutScene implements SceneBase {
       const pointLight = new PointLight(`hideout.warmLight.${index}`, position, scene);
       pointLight.diffuse = warmLightColor;
       pointLight.specular = warmSpecular;
+<<<<<<< codex/update-lighting-and-materials-in-hideoutscene-l6cidm
+      pointLight.intensity = 0.95;
+      pointLight.range = 4.6;
+=======
       pointLight.intensity = 1.15;
       pointLight.range = 3.8;
+>>>>>>> main
       pointLight.falloffType = PointLight.FALLOFF_PHYSICAL;
     });
 
