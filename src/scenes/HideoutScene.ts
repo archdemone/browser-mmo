@@ -5,6 +5,7 @@ import {
   HemisphericLight,
   Mesh,
   MeshBuilder,
+  PointLight,
   Ray,
   Scene,
   StandardMaterial,
@@ -20,6 +21,7 @@ import type { SceneManager } from "../core/SceneManager";
 import { HudUI, type HudState } from "../ui/HudUI";
 import { SaveService } from "../state/SaveService";
 import { Enemy } from "../gameplay/Enemy";
+import { PostFXConfig } from "../visuals/PostFXConfig";
 
 interface OccluderController {
   mesh: Mesh;
@@ -234,16 +236,21 @@ export class HideoutScene implements SceneBase {
 
   async load(engine: Engine): Promise<void> {
     this.scene = new Scene(engine);
-    this.scene.ambientColor = new Color3(0.25, 0.25, 0.3);
+    this.scene.ambientColor = new Color3(0.035, 0.04, 0.055);
     this.scene.clearColor = new Color4(0.02, 0.02, 0.03, 1);
 
     const hemi = new HemisphericLight("hideout.hemi", new Vector3(0, 1, 0), this.scene);
-    hemi.intensity = 1.15;
+    hemi.intensity = 0.34;
+    hemi.diffuse = new Color3(0.28, 0.38, 0.54);
+    hemi.groundColor = new Color3(0.16, 0.2, 0.28);
     hemi.specular = Color3.Black();
 
     this.input = new Input();
     await this.buildHideoutGeometry();
     await this.spawnPlayer();
+    if (this.scene) {
+      PostFXConfig.apply(this.scene);
+    }
     HudUI.init();
     HudUI.onClickAttack(() => {
       this.input?.triggerVirtualAttack();
@@ -328,6 +335,8 @@ export class HideoutScene implements SceneBase {
     this.cameraRig?.dispose();
     this.scene?.dispose();
 
+    PostFXConfig.dispose();
+
     this.scene = null;
     this.input = null;
     this.player = null;
@@ -384,32 +393,33 @@ export class HideoutScene implements SceneBase {
     const materials = this.createMaterials(scene);
     const platform = this.buildPlatform(scene, materials, tileSize, tileThickness, tileCounter);
     const ramp = this.buildRamp(scene, materials, platform, tileSize, tileThickness, tileCounter);
-    this.buildLowerArena(scene, materials, tileSize, tileThickness, ramp, tileCounter);
+    const lowerArena = this.buildLowerArena(scene, materials, tileSize, tileThickness, ramp, tileCounter);
     this.placeDungeonDevice(scene, materials, platform);
     this.placeOccluders(scene, materials, platform);
+    this.setupArenaLighting(scene, lowerArena, tileSize);
   }
 
   private createMaterials(scene: Scene): HideoutMaterials {
     const floorMaterial = new StandardMaterial("hideout.floorTile", scene);
-    floorMaterial.diffuseColor = new Color3(0.13, 0.13, 0.17);
-    floorMaterial.specularColor = new Color3(0.04, 0.04, 0.05);
+    floorMaterial.diffuseColor = new Color3(0.2, 0.2, 0.26);
+    floorMaterial.specularColor = new Color3(0.05, 0.05, 0.06);
 
     const brokenFloorMaterial = new StandardMaterial("hideout.floorTileBroken", scene);
-    brokenFloorMaterial.diffuseColor = new Color3(0.11, 0.11, 0.14);
-    brokenFloorMaterial.specularColor = new Color3(0.03, 0.03, 0.04);
-    brokenFloorMaterial.emissiveColor = new Color3(0.03, 0.01, 0.01);
+    brokenFloorMaterial.diffuseColor = new Color3(0.18, 0.18, 0.22);
+    brokenFloorMaterial.specularColor = new Color3(0.04, 0.04, 0.05);
+    brokenFloorMaterial.emissiveColor = new Color3(0.025, 0.012, 0.012);
 
     const wallMaterial = new StandardMaterial("hideout.balconyWall", scene);
-    wallMaterial.diffuseColor = new Color3(0.18, 0.18, 0.22);
-    wallMaterial.specularColor = new Color3(0.05, 0.05, 0.05);
+    wallMaterial.diffuseColor = new Color3(0.11, 0.11, 0.14);
+    wallMaterial.specularColor = new Color3(0.04, 0.04, 0.04);
 
     const railingMaterial = new StandardMaterial("hideout.railing", scene);
-    railingMaterial.diffuseColor = new Color3(0.14, 0.14, 0.18);
-    railingMaterial.specularColor = new Color3(0.04, 0.04, 0.04);
+    railingMaterial.diffuseColor = new Color3(0.1, 0.1, 0.13);
+    railingMaterial.specularColor = new Color3(0.035, 0.035, 0.035);
 
     const pillarMaterial = new StandardMaterial("hideout.pillar", scene);
-    pillarMaterial.diffuseColor = new Color3(0.15, 0.15, 0.19);
-    pillarMaterial.specularColor = new Color3(0.05, 0.05, 0.05);
+    pillarMaterial.diffuseColor = new Color3(0.1, 0.1, 0.13);
+    pillarMaterial.specularColor = new Color3(0.04, 0.04, 0.04);
 
     const crateMaterial = new StandardMaterial("hideout.crate", scene);
     crateMaterial.diffuseColor = new Color3(0.26, 0.16, 0.08);
@@ -425,8 +435,8 @@ export class HideoutScene implements SceneBase {
     runeMaterial.specularColor = Color3.Black();
 
     const cliffMaterial = new StandardMaterial("hideout.cliff", scene);
-    cliffMaterial.diffuseColor = new Color3(0.08, 0.08, 0.1);
-    cliffMaterial.specularColor = new Color3(0.02, 0.02, 0.02);
+    cliffMaterial.diffuseColor = new Color3(0.07, 0.07, 0.09);
+    cliffMaterial.specularColor = new Color3(0.018, 0.018, 0.018);
 
     const bloodTexture = new Texture("/assets/environment/decals/blood_decal.png", scene);
     bloodTexture.hasAlpha = true;
@@ -448,16 +458,16 @@ export class HideoutScene implements SceneBase {
     deviceBaseMaterial.specularColor = Color3.Black();
 
     const occluderPillarA = new StandardMaterial("hideout.occluder.pillarMat1", scene);
-    occluderPillarA.diffuseColor = new Color3(0.16, 0.16, 0.2);
-    occluderPillarA.specularColor = new Color3(0.05, 0.05, 0.05);
+    occluderPillarA.diffuseColor = new Color3(0.1, 0.1, 0.13);
+    occluderPillarA.specularColor = new Color3(0.035, 0.035, 0.035);
 
     const occluderPillarB = new StandardMaterial("hideout.occluder.pillarMat2", scene);
-    occluderPillarB.diffuseColor = new Color3(0.17, 0.17, 0.21);
-    occluderPillarB.specularColor = new Color3(0.05, 0.05, 0.05);
+    occluderPillarB.diffuseColor = new Color3(0.11, 0.11, 0.14);
+    occluderPillarB.specularColor = new Color3(0.035, 0.035, 0.035);
 
     const occluderTree = new StandardMaterial("hideout.occluder.treeMat", scene);
-    occluderTree.diffuseColor = new Color3(0.2, 0.17, 0.12);
-    occluderTree.specularColor = new Color3(0.05, 0.04, 0.03);
+    occluderTree.diffuseColor = new Color3(0.18, 0.15, 0.1);
+    occluderTree.specularColor = new Color3(0.045, 0.035, 0.03);
 
     return {
       floor: floorMaterial,
@@ -867,6 +877,32 @@ export class HideoutScene implements SceneBase {
       width,
       depth,
     };
+  }
+
+  private setupArenaLighting(scene: Scene, layout: LowerArenaLayout, tileSize: number): void {
+    const warmLightColor = new Color3(0.95, 0.58, 0.32);
+    const warmSpecular = new Color3(0.8, 0.44, 0.24);
+    const warmLightPositions = [
+      new Vector3(-tileSize * 1.4, 1.25, layout.frontZ + tileSize * 1.4),
+      new Vector3(tileSize * 0.6, 1.35, layout.frontZ + tileSize * 2.6),
+      new Vector3(tileSize * 1.9, 1.2, layout.frontZ + tileSize * 3.4),
+    ];
+
+    warmLightPositions.forEach((position, index) => {
+      const pointLight = new PointLight(`hideout.warmLight.${index}`, position, scene);
+      pointLight.diffuse = warmLightColor;
+      pointLight.specular = warmSpecular;
+      pointLight.intensity = 0.95;
+      pointLight.range = 4.6;
+      pointLight.falloffType = PointLight.FALLOFF_PHYSICAL;
+    });
+
+    const fillLight = new PointLight("hideout.coolFill", new Vector3(0, 4.6, layout.centerZ - tileSize * 0.3), scene);
+    fillLight.diffuse = new Color3(0.3, 0.42, 0.62);
+    fillLight.specular = new Color3(0.2, 0.3, 0.48);
+    fillLight.intensity = 0.42;
+    fillLight.range = Math.max(layout.width, layout.depth) * 0.95;
+    fillLight.falloffType = PointLight.FALLOFF_PHYSICAL;
   }
 
   private placeDungeonDevice(scene: Scene, materials: HideoutMaterials, platform: PlatformLayout): void {
