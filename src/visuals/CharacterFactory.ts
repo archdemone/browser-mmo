@@ -8,6 +8,11 @@ interface PlayerCharacterResult {
   animator: PlayerAnimator;
 }
 
+interface EnemyCharacterResult {
+  rootMesh: TransformNode;
+  animator: PlayerAnimator | null;
+}
+
 // Resolve GLB URLs via Vite's asset pipeline to avoid 404s from incorrect public paths.
 // Files are stored under src/public/assets/characters/player with dot-separated names.
 // Using ?url returns a resolved URL string Vite can serve.
@@ -180,5 +185,12 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
 
   // TODO: Centralize animation group naming conventions to avoid brittle lookups.
   // TODO: Validate skeleton compatibility before binding animations.
+}
+
+/**
+ * Placeholder enemy factory. Replace with authored asset loading when available.
+ */
+export async function createEnemyCharacter(_scene: Scene): Promise<EnemyCharacterResult> {
+  throw new Error("Enemy character assets are not configured yet.");
 }
 

@@ -1,4 +1,5 @@
-import { Engine, Scene } from "babylonjs";
+import { Engine } from "babylonjs";
+import type { SceneBase } from "../scenes/SceneBase";
 import { SceneManager } from "./SceneManager";
 
 /**
@@ -13,17 +14,29 @@ export class Game {
    * Start the game by creating the Babylon engine, loading the initial scene, and starting the render loop.
    */
   async start(): Promise<void> {
-    const canvas: HTMLCanvasElement | null = document.getElementById("renderCanvas") as HTMLCanvasElement | null;
+    let canvas: HTMLCanvasElement | null = document.getElementById("renderCanvas") as HTMLCanvasElement | null;
     if (!canvas) {
-      throw new Error("#renderCanvas element not found");
+      console.error("[QA] Game.start() missing #renderCanvas, creating fallback canvas.");
+      canvas = document.createElement("canvas");
+      canvas.id = "renderCanvas";
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      document.body.appendChild(canvas);
     }
 
     this.engine = new Engine(canvas, true);
-    this.sceneManager = new SceneManager();
+    this.sceneManager = new SceneManager(this.engine);
 
-    await this.sceneManager.goToDungeon(this.engine);
+    try {
+      await this.sceneManager.goToHideout();
+    } catch (error) {
+      console.error("[QA] Game.start() failed to load HideoutScene", error);
+      throw error;
+    }
 
     this.lastFrameTime = performance.now();
+    console.log("[QA] Game.start() reached runRenderLoop");
+
     this.engine.runRenderLoop(() => {
       this.renderLoop();
     });
@@ -42,9 +55,16 @@ export class Game {
     const deltaTime: number = (currentTime - this.lastFrameTime) / 1000;
     this.lastFrameTime = currentTime;
 
-    this.sceneManager.update(deltaTime);
+    const activeScene: SceneBase | null = this.sceneManager.getActiveScene();
+    if (!activeScene) {
+      return;
+    }
 
-    const scene: Scene | null = this.sceneManager.getActiveScene();
-    scene?.render();
+    try {
+      activeScene.update(deltaTime);
+      activeScene.getScene().render();
+    } catch (error) {
+      console.error("[QA] Game render loop error", error);
+    }
   }
 }

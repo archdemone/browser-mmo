@@ -10,6 +10,10 @@ interface PlayerAnimatorGroups {
   attackGroup: AnimationGroup | null;
 }
 
+interface OneShotOptions {
+  forceRestart?: boolean;
+}
+
 /**
  * Controls the player's character animation blending between locomotion states and one-shot actions.
  */
@@ -22,6 +26,7 @@ export class PlayerAnimator {
   private activeOneShot: Nullable<AnimationGroup> = null;
   private oneShotObserver: Nullable<Observer<AnimationGroup>> = null;
   private lastLocomotionRequest: LocomotionState | null = null;
+  private debugLoggingActive: boolean = false;
 
   constructor(groups: PlayerAnimatorGroups) {
     this.locomotionGroups = {};
@@ -89,27 +94,77 @@ export class PlayerAnimator {
   /**
    * Plays the dodge roll animation as a one-shot override.
    */
-  playDodgeRoll(): void {
-    console.log("[PlayerAnimator] Request dodge roll");
+  playDodgeRoll(options?: OneShotOptions): void {
+    if (this.debugLoggingActive) {
+      console.log("[PlayerAnimator] Request dodge roll");
+    }
     if (!this.dodgeGroup) {
       console.warn("[QA] Dodge animation unavailable; ignoring dodge input.");
       return;
     }
-    this.playOneShot(this.dodgeGroup);
+    this.playOneShot(this.dodgeGroup, options);
     // TODO: During the dodge animation, apply a burst of movement and temporary invulnerability.
   }
 
   /**
    * Plays the attack animation as a one-shot override.
    */
-  playAttack(): void {
-    console.log("[PlayerAnimator] Request attack");
+  playAttack(options?: OneShotOptions): void {
+    if (this.debugLoggingActive) {
+      console.log("[PlayerAnimator] Request attack");
+    }
     if (!this.attackGroup) {
       console.warn("[QA] Attack animation unavailable; ignoring attack input.");
       return;
     }
-    this.playOneShot(this.attackGroup);
+    this.playOneShot(this.attackGroup, options);
     // TODO: Trigger the CombatSystem damage application when the attack connects.
+  }
+
+  cancelAttack(): void {
+    if (this.activeOneShot && this.activeOneShot === this.attackGroup) {
+      this.stopActiveOneShot();
+      const next = this.resolveLocomotionGroup(this.desiredLocomotion);
+      if (next) {
+        this.playLocomotion(next, this.desiredLocomotion);
+      }
+    }
+  }
+
+  isAttackPlaying(): boolean {
+    return this.activeOneShot === this.attackGroup && !!this.attackGroup?.isPlaying;
+  }
+
+  getAttackDuration(): number | null {
+    if (!this.attackGroup) {
+      return null;
+    }
+    const frames = this.attackGroup.to - this.attackGroup.from;
+    if (frames <= 0) {
+      return null;
+    }
+    const fps = this.attackGroup.targetedAnimations[0]?.animation?.framePerSecond ?? 60;
+    if (fps <= 0) {
+      return null;
+    }
+    return frames / fps;
+  }
+
+  setDebugLoggingActive(active: boolean): void {
+    this.debugLoggingActive = active;
+  }
+
+  static createEmpty(): PlayerAnimator {
+    const noop = {
+      updateLocomotion: () => {},
+      playDodgeRoll: () => {},
+      playAttack: () => {},
+      cancelAttack: () => {},
+      isAttackPlaying: () => false,
+      getAttackDuration: () => null,
+      setDebugLoggingActive: () => {},
+    };
+    return noop as unknown as PlayerAnimator;
   }
 
   private playLocomotion(group: AnimationGroup, state: LocomotionState): void {
@@ -128,9 +183,13 @@ export class PlayerAnimator {
     }
   }
 
-  private playOneShot(group: AnimationGroup): void {
+  private playOneShot(group: AnimationGroup, options?: OneShotOptions): void {
     if (this.activeOneShot === group) {
-      group.stop();
+      if (options?.forceRestart) {
+        group.stop();
+      } else {
+        return;
+      }
     }
 
     this.stopActiveOneShot();
