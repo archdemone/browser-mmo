@@ -236,13 +236,13 @@ export class HideoutScene implements SceneBase {
 
   async load(engine: Engine): Promise<void> {
     this.scene = new Scene(engine);
-    this.scene.ambientColor = new Color3(0.035, 0.04, 0.055);
+    this.scene.ambientColor = new Color3(0.01, 0.01, 0.015);
     this.scene.clearColor = new Color4(0.02, 0.02, 0.03, 1);
 
     const hemi = new HemisphericLight("hideout.hemi", new Vector3(0, 1, 0), this.scene);
-    hemi.intensity = 0.34;
-    hemi.diffuse = new Color3(0.28, 0.38, 0.54);
-    hemi.groundColor = new Color3(0.16, 0.2, 0.28);
+    hemi.intensity = 0.25;
+    hemi.diffuse = new Color3(0.22, 0.3, 0.42);
+    hemi.groundColor = new Color3(0.08, 0.12, 0.18);
     hemi.specular = Color3.Black();
 
     this.input = new Input();
@@ -892,16 +892,21 @@ export class HideoutScene implements SceneBase {
       const pointLight = new PointLight(`hideout.warmLight.${index}`, position, scene);
       pointLight.diffuse = warmLightColor;
       pointLight.specular = warmSpecular;
+<<<<<<< codex/update-lighting-and-materials-in-hideoutscene-l6cidm
       pointLight.intensity = 0.95;
       pointLight.range = 4.6;
+=======
+      pointLight.intensity = 1.15;
+      pointLight.range = 3.8;
+>>>>>>> main
       pointLight.falloffType = PointLight.FALLOFF_PHYSICAL;
     });
 
     const fillLight = new PointLight("hideout.coolFill", new Vector3(0, 4.6, layout.centerZ - tileSize * 0.3), scene);
-    fillLight.diffuse = new Color3(0.3, 0.42, 0.62);
-    fillLight.specular = new Color3(0.2, 0.3, 0.48);
-    fillLight.intensity = 0.42;
-    fillLight.range = Math.max(layout.width, layout.depth) * 0.95;
+    fillLight.diffuse = new Color3(0.25, 0.36, 0.55);
+    fillLight.specular = new Color3(0.18, 0.28, 0.45);
+    fillLight.intensity = 0.35;
+    fillLight.range = Math.max(layout.width, layout.depth) * 0.6;
     fillLight.falloffType = PointLight.FALLOFF_PHYSICAL;
   }
 
