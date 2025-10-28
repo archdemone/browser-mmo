@@ -28,9 +28,9 @@ export class Game {
     this.sceneManager = new SceneManager(this.engine);
 
     try {
-      await this.sceneManager.goToDungeon();
+      await this.sceneManager.goToHideout();
     } catch (error) {
-      console.error("[QA] Game.start() failed to load DungeonScene", error);
+      console.error("[QA] Game.start() failed to load HideoutScene", error);
       throw error;
     }
 

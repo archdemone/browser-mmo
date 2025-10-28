@@ -13,13 +13,15 @@ import type { ISceneLoaderAsyncResult } from "babylonjs";
 import "babylonjs-loaders";
 import { PlayerAnimator } from "./PlayerAnimator";
 
-interface PlayerCharacterResult {
+interface CharacterCreationResult {
   rootMesh: TransformNode;
   animator: PlayerAnimator;
 }
 
 const PLAYER_ASSET_PATH = "/assets/characters/player/";
-const CLIP_MANIFEST = [
+const ENEMY_ASSET_PATH = "/assets/characters/enemy/";
+
+const PLAYER_CLIP_MANIFEST = [
   { key: "idle" as const, file: "player_idle.glb" },
   { key: "run" as const, file: "player_run.glb" },
   { key: "sprint" as const, file: "player_sprint.glb" },
@@ -27,20 +29,88 @@ const CLIP_MANIFEST = [
   { key: "attack" as const, file: "player_attack.glb" },
 ];
 
+const ENEMY_CLIP_MANIFEST = [
+  { key: "idle" as const, file: "enemy_idle.glb" },
+  { key: "run" as const, file: "enemy_run.glb" },
+  { key: "sprint" as const, file: "enemy_sprint.glb" },
+  { key: "dodge" as const, file: "enemy_dodge.glb" },
+  { key: "attack" as const, file: "enemy_attack.glb" },
+];
+
+type ClipKey = (typeof PLAYER_CLIP_MANIFEST)[number]["key"];
+
+interface CharacterLoadOptions {
+  assetPath: string;
+  baseFilename: string;
+  clipManifest: { key: ClipKey; file: string }[];
+  movementRootName: string;
+  logLabel: string;
+}
+
+const PLAYER_LOAD_OPTIONS: CharacterLoadOptions = {
+  assetPath: PLAYER_ASSET_PATH,
+  baseFilename: "player_base.glb",
+  clipManifest: PLAYER_CLIP_MANIFEST,
+  movementRootName: "player.movementRoot",
+  logLabel: "CharacterFactory spawned player mesh",
+};
+
+const ENEMY_LOAD_OPTIONS: CharacterLoadOptions = {
+  assetPath: ENEMY_ASSET_PATH,
+  baseFilename: "enemy_base.glb",
+  clipManifest: ENEMY_CLIP_MANIFEST,
+  movementRootName: "enemy.movementRoot",
+  logLabel: "CharacterFactory spawned enemy mesh",
+};
+
 /**
  * Loads the player character mesh and associated animations into the provided scene.
  */
-export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharacterResult> {
+export async function createPlayerCharacter(scene: Scene): Promise<CharacterCreationResult> {
+  return loadCharacter(scene, PLAYER_LOAD_OPTIONS);
+}
+
+/**
+ * Loads the enemy character mesh and associated animations into the provided scene.
+ */
+export async function createEnemyCharacter(scene: Scene): Promise<CharacterCreationResult> {
+  return loadCharacter(scene, ENEMY_LOAD_OPTIONS);
+}
+
+async function loadCharacter(scene: Scene, options: CharacterLoadOptions): Promise<CharacterCreationResult> {
   const baseResult: ISceneLoaderAsyncResult = await SceneLoader.ImportMeshAsync(
     "",
-    PLAYER_ASSET_PATH,
-    "player_base.glb",
+    options.assetPath,
+    options.baseFilename,
     scene
   );
 
   const rootMesh = (baseResult.meshes.find((mesh) => !mesh.parent) ?? baseResult.meshes[0]) as TransformNode;
-  const collectedClips: Partial<Record<(typeof CLIP_MANIFEST)[number]["key"], AnimationGroup>> = {};
+  const collectedClips: Partial<Record<ClipKey, AnimationGroup>> = {};
+  const clipManifest = options.clipManifest;
   const baseSkeletons: Skeleton[] = baseResult.skeletons ?? [];
+  const transformLookup = new Map<string, TransformNode>();
+
+  for (const mesh of baseResult.meshes) {
+    if (mesh && typeof mesh.name === "string") {
+      transformLookup.set(mesh.name, mesh as TransformNode);
+    }
+  }
+
+  if (Array.isArray(baseResult.transformNodes)) {
+    for (const node of baseResult.transformNodes) {
+      if (node && typeof node.name === "string") {
+        transformLookup.set(node.name, node);
+      }
+    }
+  }
+
+  const skeletonLookup = new Map<string, Skeleton>();
+  for (const skeleton of baseSkeletons) {
+    if (skeleton && typeof skeleton.name === "string") {
+      skeletonLookup.set(skeleton.name, skeleton);
+    }
+  }
 
   if (baseResult.animationGroups.length > 0) {
     const baseClip = baseResult.animationGroups[0];
@@ -50,10 +120,10 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
     collectedClips.idle = baseClip;
   }
 
-  for (const { key, file } of CLIP_MANIFEST) {
+  for (const { key, file } of clipManifest) {
     try {
       const container: AssetContainer = await SceneLoader.LoadAssetContainerAsync(
-        PLAYER_ASSET_PATH,
+        options.assetPath,
         file,
         scene
       );
@@ -62,24 +132,21 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
       const importedGroups = container.animationGroups;
       if (importedGroups.length > 0) {
         const primaryGroup = importedGroups[0];
-        const cloned = primaryGroup.clone(`player-${key}`, (target: any) => {
+        const cloned = primaryGroup.clone(`${options.movementRootName}-${key}`, (target: any) => {
           if (target instanceof TransformNode || target instanceof AbstractMesh) {
-            const mappedNode = scene.getTransformNodeByName(target.name);
+            const mappedNode = transformLookup.get(target.name);
             return mappedNode ?? target;
           }
 
           if (target instanceof Skeleton) {
-            const skeletonMatch =
-              baseSkeletons.find((skeleton) => skeleton.name === target.name) ?? baseSkeletons[0];
+            const skeletonMatch = skeletonLookup.get(target.name) ?? baseSkeletons[0];
             return skeletonMatch ?? target;
           }
 
           if (target instanceof Bone) {
             const sourceSkeleton = target.getSkeleton();
             const targetSkeleton =
-              (sourceSkeleton &&
-                baseSkeletons.find((skeleton) => skeleton.name === sourceSkeleton.name)) ??
-              baseSkeletons[0];
+              (sourceSkeleton && skeletonLookup.get(sourceSkeleton.name ?? "")) ?? baseSkeletons[0];
             const boneMatch = targetSkeleton?.bones.find((bone) => bone.name === target.name);
             return boneMatch ?? target;
           }
@@ -88,7 +155,6 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
         });
 
         if (cloned) {
-          cloned.name = `player-${key}`;
           cloned.stop();
           cloned.reset();
           stripRootMotionFromGroup(cloned, rootMesh);
@@ -112,11 +178,12 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
   const initialRotation =
     rootMesh.rotationQuaternion?.toEulerAngles() ?? rootMesh.rotation.clone();
 
-  const movementRoot = new TransformNode("player.movementRoot", scene);
+  const movementRoot = new TransformNode(options.movementRootName, scene);
   movementRoot.position.copyFrom(initialPosition);
   movementRoot.rotationQuaternion = null;
   movementRoot.rotation.copyFrom(initialRotation);
   movementRoot.scaling.copyFrom(initialScaling);
+  movementRoot.rotation.y += Math.PI;
 
   rootMesh.setParent(movementRoot);
   rootMesh.position.setAll(0);
@@ -138,65 +205,85 @@ export async function createPlayerCharacter(scene: Scene): Promise<PlayerCharact
     (rootMesh as unknown as { material?: { name?: string } }).material?.name ?? undefined;
   const materialName: string = previewMesh?.material?.name ?? rootMaterialName ?? "no-material";
 
-  console.log("[QA] CharacterFactory spawned player mesh:", rootMesh.name, materialName);
+  console.log(`[QA] ${options.logLabel}:`, rootMesh.name, materialName);
 
   return { rootMesh: movementRoot, animator };
+}
 
-  // TODO: Centralize animation group naming conventions to avoid brittle lookups.
-  // TODO: Provide graceful fallbacks when optional animations are missing (e.g., sprint).
-  // TODO: Validate skeleton compatibility before binding animations.
+function isRootRelativeTransform(node: TransformNode, rootMesh: TransformNode): boolean {
+  let depth = 0;
+  let current: TransformNode | null = node;
+
+  while (current) {
+    if (current === rootMesh) {
+      return depth <= 2;
+    }
+
+    const parent = current.parent;
+    if (!parent) {
+      return false;
+    }
+
+    depth += 1;
+    if (depth > 4) {
+      return false;
+    }
+
+    current = parent as TransformNode | null;
+  }
+
+  return false;
 }
 
 function stripRootMotionFromGroup(group: AnimationGroup, rootMesh: TransformNode): void {
-  for (const targeted of group.targetedAnimations) {
+  const animationsToRemove: AnimationGroup["targetedAnimations"][number]["animation"][] = [];
+
+  for (const targeted of [...group.targetedAnimations]) {
     const animation = targeted.animation;
     if (!animation || typeof animation.targetProperty !== "string") {
       continue;
     }
 
     const property = animation.targetProperty.toLowerCase();
-    if (!property.includes("position") && !property.includes("translation")) {
+    const affectsPosition = property.includes("position") || property.includes("translation");
+    const target = targeted.target;
+    const isRootMesh = target === rootMesh;
+    const isRootTransform =
+      target instanceof TransformNode && isRootRelativeTransform(target, rootMesh);
+    const isRootBone = target instanceof Bone && !target.getParent();
+
+    if (!isRootMesh && !isRootBone && !isRootTransform) {
       continue;
     }
 
-    const target = targeted.target;
-    const isRootTransform = target === rootMesh || (target instanceof Bone && !target.getParent());
-
-    if (!isRootTransform) {
+    if ((isRootMesh || isRootTransform) && affectsPosition) {
+      animationsToRemove.push(animation);
       continue;
     }
 
     const keys = animation.getKeys();
-    if (keys.length === 0) {
+    if (keys.length === 0 || !affectsPosition) {
       continue;
     }
 
-    const firstValue = keys[0].value;
-    if (firstValue === undefined || firstValue === null) {
-      continue;
-    }
-
-    if (typeof firstValue === "number") {
-      for (const key of keys) {
-        key.value = firstValue;
-      }
-      continue;
-    }
-
-    const vectorValue =
-      firstValue instanceof Vector3
-        ? firstValue
-        : typeof firstValue === "object" && "x" in firstValue && "y" in firstValue && "z" in firstValue
-        ? new Vector3(firstValue.x as number, firstValue.y as number, firstValue.z as number)
-        : null;
-
-    if (!vectorValue) {
-      continue;
-    }
-
-    const lockedValue = vectorValue.clone();
     for (const key of keys) {
-      key.value = lockedValue.clone();
+      if (typeof key.value === "number") {
+        key.value = 0;
+      } else if (key.value instanceof Vector3) {
+        key.value = Vector3.Zero();
+      } else if (
+        typeof key.value === "object" &&
+        key.value !== null &&
+        "x" in key.value &&
+        "y" in key.value &&
+        "z" in key.value
+      ) {
+        key.value = Vector3.Zero();
+      }
     }
+  }
+
+  for (const animation of animationsToRemove) {
+    group.removeTargetedAnimation(animation);
   }
 }

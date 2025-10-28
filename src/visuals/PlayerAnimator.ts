@@ -21,6 +21,7 @@ export class PlayerAnimator {
   private desiredLocomotion: LocomotionState = "idle";
   private currentLocomotion: LocomotionState = "idle";
   private lastLocomotionRequest: LocomotionState | null = null;
+  private debugLoggingActive: boolean = false;
 
   constructor(clips: PlayerAnimatorClips) {
     this.clips = clips;
@@ -64,7 +65,10 @@ export class PlayerAnimator {
       return;
     }
 
-    console.log("[PlayerAnimator] Request dodge roll");
+    if (this.debugLoggingActive) {
+      console.log(`[DBG] dodge start group=${clip.name}`);
+    }
+
     this.playOneShot(clip);
     // TODO: During the dodge animation, apply a burst of movement and temporary invulnerability.
   }
@@ -72,16 +76,50 @@ export class PlayerAnimator {
   /**
    * Plays the attack animation as a one-shot override.
    */
-  playAttack(): void {
+  playAttack(options?: { forceRestart?: boolean }): void {
     const clip = this.clips.attack ?? null;
     if (!clip) {
       console.warn("[QA] PlayerAnimator attack clip missing, safe no-op.");
       return;
     }
 
-    console.log("[PlayerAnimator] Request attack");
+    const forceRestart = options?.forceRestart ?? false;
+
+    if (!forceRestart && this.isAttackPlaying()) {
+      return;
+    }
+
+    if (forceRestart && this.activeOneShot === clip) {
+      clip.stop();
+    }
+
+    if (this.debugLoggingActive) {
+      console.log("[DBG] attack start");
+    }
     this.playOneShot(clip);
     // TODO: Trigger the CombatSystem damage application when the attack connects.
+  }
+
+  isAttackPlaying(): boolean {
+    return !!this.activeOneShot && this.activeOneShot === (this.clips.attack ?? null);
+  }
+
+  cancelAttack(): void {
+    const attackClip = this.clips.attack ?? null;
+    if (!attackClip) {
+      return;
+    }
+
+    if (this.activeOneShot !== attackClip) {
+      return;
+    }
+
+    this.stopActiveOneShot();
+    this.playLocomotionClip(this.desiredLocomotion);
+  }
+
+  getAttackDuration(): number {
+    return this.computeClipDuration(this.clips.attack ?? null);
   }
 
   private configureLoop(group: AnimationGroup | null): void {
@@ -112,6 +150,11 @@ export class PlayerAnimator {
         clip.start(true);
       }
       this.currentLocomotion = state;
+      if (this.debugLoggingActive) {
+        console.log(
+          `[DBG] locomotion state=${state} group=${clip?.name ?? "none"} loop=${clip?.loopAnimation ?? false}`
+        );
+      }
       return;
     }
 
@@ -124,6 +167,12 @@ export class PlayerAnimator {
 
     this.activeLoop = clip;
     this.currentLocomotion = state;
+
+    if (this.debugLoggingActive) {
+      console.log(
+        `[DBG] locomotion state=${state} group=${clip?.name ?? "none"} loop=${clip?.loopAnimation ?? false}`
+      );
+    }
   }
 
   private resolveLocomotionClip(state: LocomotionState): AnimationGroup | null {
@@ -161,8 +210,51 @@ export class PlayerAnimator {
       }
 
       this.activeOneShot = null;
+      if (this.debugLoggingActive) {
+        console.log(`[DBG] dodge end group=${group.name}`);
+      }
       this.playLocomotionClip(this.desiredLocomotion);
     });
+  }
+
+  private computeClipDuration(clip: AnimationGroup | null): number {
+    if (!clip) {
+      return 0;
+    }
+
+    let from = clip.from;
+    let to = clip.to;
+    let fps = 0;
+
+    if (clip.targetedAnimations.length > 0) {
+      const first = clip.targetedAnimations[0].animation;
+      if (first) {
+        fps = first.framePerSecond ?? fps;
+        if (typeof from !== "number") {
+          const keys = first.getKeys();
+          if (keys.length > 0) {
+            from = keys[0].frame;
+            to = keys[keys.length - 1].frame;
+          }
+        }
+      }
+    }
+
+    if (typeof from !== "number" || typeof to !== "number") {
+      return 0;
+    }
+    if (fps <= 0) {
+      fps = 60;
+    }
+    const frameCount = Math.max(0, to - from);
+    if (frameCount === 0) {
+      return 0;
+    }
+    const speedRatio = clip.speedRatio || 1;
+    if (speedRatio === 0) {
+      return 0;
+    }
+    return frameCount / fps / Math.abs(speedRatio);
   }
 
   private stopActiveLoop(): void {
@@ -193,8 +285,14 @@ export class PlayerAnimator {
       return;
     }
 
-    console.log(`[PlayerAnimator] Request ${state} locomotion`);
+    if (this.debugLoggingActive) {
+      console.log(`[DBG] locomotion request state=${state}`);
+    }
     this.lastLocomotionRequest = state;
+  }
+
+  setDebugLoggingActive(active: boolean): void {
+    this.debugLoggingActive = active;
   }
 
   static createEmpty(): PlayerAnimator {

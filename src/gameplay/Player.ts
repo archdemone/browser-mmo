@@ -1,8 +1,16 @@
 import { Scene, Vector3 } from "babylonjs";
 import type { Camera, TransformNode } from "babylonjs";
 import type { Input } from "../core/Input";
+import { SaveService } from "../state/SaveService";
 import { createPlayerCharacter } from "../visuals/CharacterFactory";
 import { PlayerAnimator } from "../visuals/PlayerAnimator";
+
+export interface PlayerCollider {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
 
 /**
  * Represents the controllable player character.
@@ -10,7 +18,7 @@ import { PlayerAnimator } from "../visuals/PlayerAnimator";
 export class Player {
   private readonly mesh: TransformNode;
   private readonly animator: PlayerAnimator;
-  private readonly input: Input;
+  readonly input: Input;
   private readonly walkSpeed: number;
   private readonly sprintSpeed: number;
   private readonly dodgeSpeed: number;
@@ -18,6 +26,18 @@ export class Player {
   private dodgeTimeRemaining: number;
   private readonly dodgeDirection: Vector3;
   private readonly lastMoveDirection: Vector3;
+  private debugLoggingActive: boolean = false;
+  private dead: boolean = false;
+  maxHP: number;
+  hp: number;
+  contactIframesTimer: number;
+  readonly attackDamage: number;
+  readonly attackRange: number;
+  private attackTriggeredThisFrame: boolean = false;
+  private spawnPoint: Vector3;
+  private spawnRotationY: number;
+  private collidersProvider: (() => PlayerCollider[]) | null = null;
+  private readonly collisionRadius: number = 0.7;
 
   private constructor(mesh: TransformNode, animator: PlayerAnimator, input: Input) {
     this.mesh = mesh;
@@ -33,6 +53,13 @@ export class Player {
     this.dodgeTimeRemaining = 0;
     this.dodgeDirection = new Vector3(0, 0, 1);
     this.lastMoveDirection = new Vector3(0, 0, 1);
+    this.maxHP = SaveService.getMaxHP();
+    this.hp = SaveService.getHP();
+    this.contactIframesTimer = 0;
+    this.attackDamage = 20;
+    this.attackRange = 2;
+    this.spawnPoint = mesh.position.clone();
+    this.spawnRotationY = mesh.rotation?.y ?? 0;
 
     if (typeof window !== "undefined") {
       (window as unknown as { __qaPlayer?: Player }).__qaPlayer = this;
@@ -63,17 +90,35 @@ export class Player {
     const sprinting = this.input.isSprinting();
     const movementDirection = this.computeMovementDirection(moveAxis);
     const debugMoveDirection = movementDirection.clone();
-    let speedThisFrame = 0;
+    this.attackTriggeredThisFrame = false;
+
+    if (this.contactIframesTimer > 0) {
+      this.contactIframesTimer = Math.max(0, this.contactIframesTimer - deltaTime);
+    }
+
+    if (this.dead) {
+      this.animator.updateLocomotion(0, false);
+      return;
+    }
+
+    const colliders = this.collidersProvider?.() ?? null;
+    let locomotionSpeed = 0;
 
     if (movementDirection.lengthSquared() > 0) {
       movementDirection.normalize();
-      speedThisFrame = sprinting ? this.sprintSpeed : this.walkSpeed;
-      const displacement = movementDirection.scale(speedThisFrame * deltaTime);
-      this.mesh.position.addInPlace(displacement);
-      this.lastMoveDirection.copyFrom(movementDirection);
-
-      const facingAngle: number = Math.atan2(movementDirection.x, movementDirection.z);
-      this.mesh.rotation.y = facingAngle;
+      const baseSpeed = sprinting ? this.sprintSpeed : this.walkSpeed;
+      const rawDisplacement = movementDirection.scale(baseSpeed * deltaTime);
+      const applied = this.applyDisplacement(rawDisplacement, colliders);
+      if (applied.lengthSquared() > 0) {
+        locomotionSpeed = applied.length() / Math.max(deltaTime, 1e-4);
+        this.lastMoveDirection.copyFrom(applied.normalize());
+        const facingAngle: number = Math.atan2(applied.x, applied.z) + Math.PI;
+        this.mesh.rotation.y = facingAngle;
+      } else {
+        const facingAngle: number = Math.atan2(movementDirection.x, movementDirection.z) + Math.PI;
+        this.mesh.rotation.y = facingAngle;
+        this.lastMoveDirection.copyFrom(movementDirection);
+      }
     }
 
     if (this.dodgeTimeRemaining > 0) {
@@ -85,17 +130,29 @@ export class Player {
           : this.getFacingDirection();
       const normalized = direction.clone().normalize();
       const displacement = normalized.scale(this.dodgeSpeed * deltaTime);
-      this.mesh.position.addInPlace(displacement);
+      const applied = this.applyDisplacement(displacement, colliders);
+      if (applied.lengthSquared() > 0) {
+        const appliedSpeed = applied.length() / Math.max(deltaTime, 1e-4);
+        locomotionSpeed = Math.max(locomotionSpeed, appliedSpeed);
+      }
       this.dodgeTimeRemaining = Math.max(0, this.dodgeTimeRemaining - deltaTime);
     }
 
-    this.animator.updateLocomotion(speedThisFrame, sprinting);
+    if (this.debugLoggingActive) {
+      console.log(
+        `[DBG] player beforeAnim pos=(${this.mesh.position.x.toFixed(2)},${this.mesh.position.z.toFixed(
+          2
+        )}) speed=${locomotionSpeed.toFixed(2)}`
+      );
+    }
+
+    this.animator.updateLocomotion(locomotionSpeed, sprinting);
 
     if (typeof window !== "undefined") {
       (window as unknown as { __qaPlayerDebug?: unknown }).__qaPlayerDebug = {
         axis: { x: moveAxis.x, z: moveAxis.z },
         sprinting,
-        speedThisFrame,
+        speedThisFrame: locomotionSpeed,
         dodgeRemaining: this.dodgeTimeRemaining,
         dodgeDirection: this.dodgeDirection.asArray(),
         lastMoveDirection: this.lastMoveDirection.asArray(),
@@ -123,8 +180,14 @@ export class Player {
     }
 
     if (this.input.consumeAttack()) {
-      this.animator.playAttack();
-      // TODO: Connect to the CombatSystem for hit detection and damage application.
+      this.animator.playAttack({ forceRestart: true });
+      this.attackTriggeredThisFrame = true;
+    }
+
+    if (this.debugLoggingActive) {
+      console.log(
+        `[DBG] player afterAnim pos=(${this.mesh.position.x.toFixed(2)},${this.mesh.position.z.toFixed(2)})`
+      );
     }
   }
 
@@ -139,7 +202,121 @@ export class Player {
    * Access the current world position of the player mesh.
    */
   getPosition(): Vector3 {
-    return this.mesh.getAbsolutePosition();
+    return this.mesh.position.clone();
+  }
+
+  applyDamage(amount: number): void {
+    if (this.dead || this.contactIframesTimer > 0) {
+      return;
+    }
+    this.hp = Math.max(0, this.hp - amount);
+    SaveService.setHP(this.hp);
+    this.contactIframesTimer = 0.35;
+    console.log(`[COMBAT] Player took ${amount} dmg. HP=${this.hp}/${this.maxHP}`);
+    if (this.hp <= 0) {
+      console.log("[COMBAT] Player died");
+      this.handleDeath();
+    }
+  }
+
+  consumeAttackTrigger(): boolean {
+    if (!this.attackTriggeredThisFrame) {
+      return false;
+    }
+    this.attackTriggeredThisFrame = false;
+    return true;
+  }
+
+  setDebugLoggingActive(active: boolean): void {
+    this.debugLoggingActive = active;
+    this.animator.setDebugLoggingActive(active);
+  }
+
+  isDead(): boolean {
+    return this.dead;
+  }
+
+  setCollidersProvider(provider: (() => PlayerCollider[]) | null): void {
+    this.collidersProvider = provider;
+  }
+
+  syncFromSave(): void {
+    this.maxHP = SaveService.getMaxHP();
+    this.hp = Math.min(this.maxHP, SaveService.getHP());
+  }
+
+  setSpawnPoint(position: Vector3, rotationY: number): void {
+    this.spawnPoint = position.clone();
+    this.spawnRotationY = rotationY;
+  }
+
+  teleportTo(position: Vector3, rotationY?: number): void {
+    this.mesh.position.copyFrom(position);
+    if (typeof rotationY === "number") {
+      this.mesh.rotation.y = rotationY;
+    }
+  }
+
+  teleportToSpawn(): void {
+    this.teleportTo(this.spawnPoint, this.spawnRotationY);
+  }
+
+  private applyDisplacement(displacement: Vector3, colliders: PlayerCollider[] | null): Vector3 {
+    if (displacement.lengthSquared() === 0) {
+      return Vector3.Zero();
+    }
+
+    if (!colliders || colliders.length === 0) {
+      const applied = displacement.clone();
+      this.mesh.position.addInPlace(applied);
+      return applied;
+    }
+
+    const origin = this.mesh.position.clone();
+    const nextPos = origin.clone();
+    const result = new Vector3(0, 0, 0);
+
+    if (displacement.y !== 0) {
+      nextPos.y = origin.y + displacement.y;
+      result.y = displacement.y;
+    }
+
+    if (displacement.x !== 0) {
+      const originalX = nextPos.x;
+      nextPos.x = originalX + displacement.x;
+      if (this.intersectsAnyCollider(nextPos, colliders)) {
+        nextPos.x = originalX;
+      } else {
+        result.x = displacement.x;
+      }
+    }
+
+    if (displacement.z !== 0) {
+      const originalZ = nextPos.z;
+      nextPos.z = originalZ + displacement.z;
+      if (this.intersectsAnyCollider(nextPos, colliders)) {
+        nextPos.z = originalZ;
+      } else {
+        result.z = displacement.z;
+      }
+    }
+
+    this.mesh.position.copyFrom(nextPos);
+    return result;
+  }
+
+  private intersectsAnyCollider(position: Vector3, colliders: PlayerCollider[]): boolean {
+    const radiusSq = this.collisionRadius * this.collisionRadius;
+    for (const collider of colliders) {
+      const closestX = Math.max(collider.minX, Math.min(position.x, collider.maxX));
+      const closestZ = Math.max(collider.minZ, Math.min(position.z, collider.maxZ));
+      const dx = position.x - closestX;
+      const dz = position.z - closestZ;
+      if (dx * dx + dz * dz <= radiusSq) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private computeMovementDirection(axis: { x: number; z: number }): Vector3 {
@@ -161,8 +338,6 @@ export class Player {
       forward.normalize();
     }
 
-    forward.scaleInPlace(-1);
-
     let right = Vector3.Cross(Vector3.Up(), forward);
     if (right.lengthSquared() === 0) {
       right = new Vector3(1, 0, 0);
@@ -181,5 +356,38 @@ export class Player {
       return new Vector3(0, 0, 1);
     }
     return facing.normalize();
+  }
+
+  private handleDeath(): void {
+    if (this.dead) {
+      return;
+    }
+    this.dead = true;
+    this.hp = 0;
+    SaveService.setHP(this.hp);
+    this.dodgeTimeRemaining = 0;
+    this.animator.cancelAttack();
+    this.animator.updateLocomotion(0, false);
+  }
+
+  respawn(): void {
+    if (!this.dead) {
+      return;
+    }
+    SaveService.resetHPFull();
+    this.syncFromSave();
+    this.dead = false;
+    this.contactIframesTimer = 1.0;
+    this.dodgeTimeRemaining = 0;
+    this.dodgeDirection.set(0, 0, 1);
+    this.lastMoveDirection.set(0, 0, 1);
+    this.teleportToSpawn();
+    this.animator.cancelAttack();
+    this.animator.updateLocomotion(0, false);
+    console.log(
+      `[COMBAT] Player respawned at (${this.mesh.position.x.toFixed(2)}, ${this.mesh.position.z.toFixed(
+        2
+      )}) with full HP (${this.hp}/${this.maxHP})`
+    );
   }
 }

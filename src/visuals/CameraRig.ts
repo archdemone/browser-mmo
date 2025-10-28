@@ -11,6 +11,7 @@ export class CameraRig {
   private readonly beta: number;
   private readonly radius: number;
   private readonly targetOffset: Vector3;
+  private debugLogTimeRemaining: number = 0;
 
   constructor(scene: Scene, target: TransformNode | null) {
     this.scene = scene;
@@ -45,16 +46,26 @@ export class CameraRig {
   /**
    * Update the camera to follow the player each frame.
    */
-  update(): void {
+  update(deltaTime?: number): void {
     if (!this.target || this.target.isDisposed()) {
       return;
     }
 
-    const playerPosition: Vector3 = this.target.getAbsolutePosition().add(this.targetOffset);
+    const playerPosition = this.target.getAbsolutePosition().add(this.targetOffset);
     this.camera.alpha = this.alpha;
     this.camera.beta = this.beta;
     this.camera.radius = this.radius;
     this.camera.setTarget(playerPosition);
+
+    if (this.debugLogTimeRemaining > 0) {
+      console.log(
+        `[DBG] camera targeting (${playerPosition.x.toFixed(2)},${playerPosition.z.toFixed(
+          2
+        )}) camPos=(${this.camera.position.x.toFixed(2)},${this.camera.position.z.toFixed(2)})`
+      );
+      const elapsed = typeof deltaTime === "number" ? deltaTime : this.scene.getEngine().getDeltaTime() / 1000;
+      this.debugLogTimeRemaining = Math.max(0, this.debugLogTimeRemaining - elapsed);
+    }
   }
 
   setTarget(target: TransformNode | null): void {
@@ -68,6 +79,10 @@ export class CameraRig {
     }
     this.camera.dispose();
     this.target = null;
+  }
+
+  enableDebugLogging(seconds: number): void {
+    this.debugLogTimeRemaining = Math.max(this.debugLogTimeRemaining, seconds);
   }
 
   // TODO: Add camera shake effects and smooth dampening/lerp options for future polish.
