@@ -75,6 +75,7 @@ export class PlayerAnimator {
 
   /**
    * Plays the attack animation as a one-shot override.
+   * Uses bone-specific targeting to only animate upper body during movement.
    */
   playAttack(options?: { forceRestart?: boolean }): void {
     const clip = this.clips.attack ?? null;
@@ -96,7 +97,14 @@ export class PlayerAnimator {
     if (this.debugLoggingActive) {
       console.log("[DBG] attack start");
     }
-    this.playOneShot(clip);
+    
+    // If player is moving, use overlay approach
+    if (this.currentLocomotion !== "idle") {
+      this.playOneShotOverlay(clip);
+    } else {
+      // If stationary, use normal one-shot
+      this.playOneShot(clip);
+    }
     // TODO: Trigger the CombatSystem damage application when the attack connects.
   }
 
@@ -214,6 +222,56 @@ export class PlayerAnimator {
         console.log(`[DBG] dodge end group=${group.name}`);
       }
       this.playLocomotionClip(this.desiredLocomotion);
+    });
+  }
+
+  /**
+   * Plays a one-shot animation as an overlay without stopping locomotion.
+   * Uses animation weights to blend attack with locomotion.
+   */
+  private playOneShotOverlay(group: AnimationGroup): void {
+    if (this.activeOneShot === group) {
+      group.stop();
+    }
+
+    this.stopActiveOneShot();
+    // NOTE: Unlike playOneShot, we DON'T call this.stopActiveLoop()
+    // This allows locomotion animation to continue playing underneath
+
+    this.activeOneShot = group;
+    group.reset();
+    
+    // Set attack animation weight to blend with locomotion
+    group.weight = 0.4; // 40% attack, 60% locomotion
+    
+    // If locomotion is playing, keep it dominant
+    if (this.activeLoop) {
+      this.activeLoop.weight = 0.8; // 80% locomotion, 20% attack
+    }
+    
+    group.start(false);
+
+    this.oneShotObserver = group.onAnimationGroupEndObservable.add(() => {
+      if (this.oneShotObserver) {
+        group.onAnimationGroupEndObservable.remove(this.oneShotObserver);
+        this.oneShotObserver = null;
+      }
+
+      if (this.activeOneShot !== group) {
+        return;
+      }
+
+      this.activeOneShot = null;
+      
+      // Restore locomotion weight to full
+      if (this.activeLoop) {
+        this.activeLoop.weight = 1.0;
+      }
+      
+      if (this.debugLoggingActive) {
+        console.log(`[DBG] attack overlay end group=${group.name}`);
+      }
+      // Don't resume locomotion since it was never stopped
     });
   }
 

@@ -35,6 +35,9 @@ class HudUIImpl {
   private attackHandler: (() => void) | null = null;
   private dodgeHandler: (() => void) | null = null;
   private enterHandler: (() => void) | null = null;
+  private spawnHandler: (() => void) | null = null;
+  private invincibilityCheckbox: HTMLInputElement | null = null;
+  private spawnButton: HTMLButtonElement | null = null;
 
   init(): void {
     if (typeof document === "undefined") {
@@ -136,6 +139,47 @@ class HudUIImpl {
 
     topLeft.appendChild(xpContainer);
 
+    // Spawn button
+    this.spawnButton = document.createElement("button");
+    this.spawnButton.textContent = "Spawn Enemy";
+    this.spawnButton.style.padding = "6px 12px";
+    this.spawnButton.style.fontSize = "12px";
+    this.spawnButton.style.background = "rgba(255, 100, 100, 0.8)";
+    this.spawnButton.style.border = "1px solid rgba(255, 255, 255, 0.3)";
+    this.spawnButton.style.borderRadius = "4px";
+    this.spawnButton.style.color = "white";
+    this.spawnButton.style.cursor = "pointer";
+    this.spawnButton.style.pointerEvents = "auto";
+    this.spawnButton.onclick = () => {
+      if (this.spawnHandler) {
+        this.spawnHandler();
+      }
+    };
+    topLeft.appendChild(this.spawnButton);
+
+    // Invincibility checkbox
+    const invincibilityContainer = document.createElement("div");
+    invincibilityContainer.style.display = "flex";
+    invincibilityContainer.style.alignItems = "center";
+    invincibilityContainer.style.gap = "6px";
+    invincibilityContainer.style.pointerEvents = "auto";
+
+    this.invincibilityCheckbox = document.createElement("input");
+    this.invincibilityCheckbox.type = "checkbox";
+    this.invincibilityCheckbox.id = "invincibility-toggle";
+    this.invincibilityCheckbox.style.cursor = "pointer";
+
+    const invincibilityLabel = document.createElement("label");
+    invincibilityLabel.textContent = "Player Invincible";
+    invincibilityLabel.htmlFor = "invincibility-toggle";
+    invincibilityLabel.style.fontSize = "12px";
+    invincibilityLabel.style.color = "#f0f0f0";
+    invincibilityLabel.style.cursor = "pointer";
+
+    invincibilityContainer.appendChild(this.invincibilityCheckbox);
+    invincibilityContainer.appendChild(invincibilityLabel);
+    topLeft.appendChild(invincibilityContainer);
+
     this.abilityBar = document.createElement("div");
     this.abilityBar.style.position = "absolute";
     this.abilityBar.style.bottom = "16px";
@@ -147,6 +191,7 @@ class HudUIImpl {
     root.appendChild(this.abilityBar);
 
     this.attackSlot = this.createAbilitySlot("LMB", "Attack", true);
+    this.attackSlot.classList.add("attack-button");
     this.dodgeSlot = this.createAbilitySlot("Space", "Dodge", true);
     this.skill1Slot = this.createAbilitySlot("Q", "Skill 1", false);
     this.skill2Slot = this.createAbilitySlot("W", "Skill 2", false);
@@ -262,6 +307,14 @@ class HudUIImpl {
 
   onClickEnterDungeon(cb: (() => void) | null): void {
     this.enterHandler = cb;
+  }
+
+  onClickSpawn(cb: (() => void) | null): void {
+    this.spawnHandler = cb;
+  }
+
+  getInvincibilityState(): boolean {
+    return this.invincibilityCheckbox?.checked ?? false;
   }
 
   private captureElements(root: HTMLDivElement): void {

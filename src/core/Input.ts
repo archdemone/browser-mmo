@@ -14,6 +14,8 @@ export class Input {
   private readonly keyUpHandler: (event: KeyboardEvent) => void;
   private readonly mouseDownHandler: (event: MouseEvent) => void;
   private readonly mouseUpHandler: (event: MouseEvent) => void;
+  private readonly pointerDownHandler: (event: PointerEvent) => void;
+  private readonly pointerUpHandler: (event: PointerEvent) => void;
 
   constructor() {
     this.keyDownHandler = (event: KeyboardEvent) => {
@@ -37,8 +39,18 @@ export class Input {
     };
 
     this.mouseDownHandler = (event: MouseEvent) => {
+      console.log(`[INPUT] Mouse down event: button ${event.button}, target: ${event.target?.tagName}`);
       if (event.button === 0) {
-        this.attackQueued = true;
+        // Left click triggers attack by simulating HUD button click
+        const attackButton = document.querySelector('.attack-button') as HTMLElement;
+        if (attackButton) {
+          console.log(`[INPUT] Simulating attack button click`);
+          attackButton.click();
+        } else {
+          // Fallback: directly set attackQueued
+          this.attackQueued = true;
+          console.log(`[INPUT] Left-click attack triggered (fallback)`);
+        }
       }
     };
 
@@ -46,10 +58,31 @@ export class Input {
       // Reserved for future mouse state tracking.
     };
 
-    window.addEventListener("keydown", this.keyDownHandler);
-    window.addEventListener("keyup", this.keyUpHandler);
-    window.addEventListener("mousedown", this.mouseDownHandler);
-    window.addEventListener("mouseup", this.mouseUpHandler);
+    this.pointerDownHandler = (event: PointerEvent) => {
+      console.log(`[INPUT] Pointer down event: button ${event.button}, target: ${event.target?.tagName}`);
+      if (event.button === 0) {
+        // Left click triggers attack by simulating HUD button click
+        const attackButton = document.querySelector('.attack-button') as HTMLElement;
+        if (attackButton) {
+          console.log(`[INPUT] Simulating attack button click via pointer`);
+          attackButton.click();
+        } else {
+          // Fallback: directly set attackQueued
+          this.attackQueued = true;
+          console.log(`[INPUT] Left-click attack triggered (pointer fallback)`);
+        }
+      }
+    };
+
+    this.pointerUpHandler = (_event: PointerEvent) => {
+      // Reserved for future pointer state tracking.
+    };
+
+    // Attach to window with capture to intercept events before canvas
+    window.addEventListener("keydown", this.keyDownHandler, { capture: true });
+    window.addEventListener("keyup", this.keyUpHandler, { capture: true });
+    window.addEventListener("pointerdown", this.pointerDownHandler, { capture: true });
+    window.addEventListener("pointerup", this.pointerUpHandler, { capture: true });
 
     if (typeof window !== "undefined") {
       (window as unknown as { __qaInput?: Input }).__qaInput = this;
@@ -185,10 +218,10 @@ export class Input {
    * Clean up registered input listeners.
    */
   dispose(): void {
-    window.removeEventListener("keydown", this.keyDownHandler);
-    window.removeEventListener("keyup", this.keyUpHandler);
-    window.removeEventListener("mousedown", this.mouseDownHandler);
-    window.removeEventListener("mouseup", this.mouseUpHandler);
+    window.removeEventListener("keydown", this.keyDownHandler, { capture: true });
+    window.removeEventListener("keyup", this.keyUpHandler, { capture: true });
+    window.removeEventListener("pointerdown", this.pointerDownHandler, { capture: true });
+    window.removeEventListener("pointerup", this.pointerUpHandler, { capture: true });
 
     if (typeof window !== "undefined") {
       const globalRef = window as unknown as { __qaInput?: Input | undefined };

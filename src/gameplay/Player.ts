@@ -35,6 +35,12 @@ export class Player {
   readonly attackRange: number;
   private attackTriggeredThisFrame: boolean = false;
   private spawnPoint: Vector3;
+  invulnTimer: number = 0;
+  stamina: number = 100;
+  maxStamina: number = 100;
+  private staminaRegenRate: number = 20; // per second
+  private dodgeCost: number = 20;
+  private isInvincible: boolean = false;
   private spawnRotationY: number;
   private collidersProvider: (() => PlayerCollider[]) | null = null;
   private readonly collisionRadius: number = 0.7;
@@ -94,6 +100,15 @@ export class Player {
 
     if (this.contactIframesTimer > 0) {
       this.contactIframesTimer = Math.max(0, this.contactIframesTimer - deltaTime);
+    }
+
+    if (this.invulnTimer > 0) {
+      this.invulnTimer = Math.max(0, this.invulnTimer - deltaTime);
+    }
+
+    // Stamina regen
+    if (this.stamina < this.maxStamina) {
+      this.stamina = Math.min(this.maxStamina, this.stamina + this.staminaRegenRate * deltaTime);
     }
 
     if (this.dead) {
@@ -163,25 +178,33 @@ export class Player {
     }
 
     if (this.input.consumeDodgeRoll()) {
-      const baseDirection =
-        movementDirection.lengthSquared() > 0
-          ? movementDirection
-          : this.lastMoveDirection.lengthSquared() > 0
-          ? this.lastMoveDirection
-          : this.getFacingDirection();
-      if (baseDirection.lengthSquared() > 0) {
-        this.dodgeDirection.copyFrom(baseDirection);
+      if (this.stamina >= this.dodgeCost) {
+        this.stamina -= this.dodgeCost;
+        const baseDirection =
+          movementDirection.lengthSquared() > 0
+            ? movementDirection
+            : this.lastMoveDirection.lengthSquared() > 0
+            ? this.lastMoveDirection
+            : this.getFacingDirection();
+        if (baseDirection.lengthSquared() > 0) {
+          this.dodgeDirection.copyFrom(baseDirection);
+        } else {
+          this.dodgeDirection.set(0, 0, 1);
+        }
+        this.dodgeDirection.normalize();
+        this.dodgeTimeRemaining = this.dodgeDuration;
+        this.invulnTimer = 0.4;
+        this.animator.playDodgeRoll();
       } else {
-        this.dodgeDirection.set(0, 0, 1);
+        console.log("[COMBAT] Dodge blocked: not enough stamina");
       }
-      this.dodgeDirection.normalize();
-      this.dodgeTimeRemaining = this.dodgeDuration;
-      this.animator.playDodgeRoll();
     }
 
-    if (this.input.consumeAttack()) {
+    const attackConsumed = this.input.consumeAttack();
+    if (attackConsumed) {
       this.animator.playAttack({ forceRestart: true });
       this.attackTriggeredThisFrame = true;
+      console.log("[INPUT] Attack triggered");
     }
 
     if (this.debugLoggingActive) {
@@ -209,6 +232,14 @@ export class Player {
     if (this.dead || this.contactIframesTimer > 0) {
       return;
     }
+    if (this.invulnTimer > 0) {
+      console.log("[COMBAT] Attack ignored: dodge i-frame active");
+      return;
+    }
+    if (this.isInvincible) {
+      console.log(`[COMBAT] Attack ignored: player is invincible (${amount} dmg prevented)`);
+      return;
+    }
     this.hp = Math.max(0, this.hp - amount);
     SaveService.setHP(this.hp);
     this.contactIframesTimer = 0.35;
@@ -217,6 +248,11 @@ export class Player {
       console.log("[COMBAT] Player died");
       this.handleDeath();
     }
+  }
+
+  setInvincible(invincible: boolean): void {
+    this.isInvincible = invincible;
+    console.log(`[DEBUG] Player invincibility set to: ${invincible}`);
   }
 
   consumeAttackTrigger(): boolean {
@@ -366,6 +402,8 @@ export class Player {
     this.hp = 0;
     SaveService.setHP(this.hp);
     this.dodgeTimeRemaining = 0;
+    this.invulnTimer = 0;
+    this.stamina = this.maxStamina; // full stamina on death
     this.animator.cancelAttack();
     this.animator.updateLocomotion(0, false);
   }
@@ -378,6 +416,7 @@ export class Player {
     this.syncFromSave();
     this.dead = false;
     this.contactIframesTimer = 1.0;
+    this.invulnTimer = 1.0;
     this.dodgeTimeRemaining = 0;
     this.dodgeDirection.set(0, 0, 1);
     this.lastMoveDirection.set(0, 0, 1);

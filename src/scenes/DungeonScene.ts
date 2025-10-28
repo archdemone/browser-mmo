@@ -19,6 +19,7 @@ import { CombatSystem } from "../gameplay/CombatSystem";
 import { CameraRig } from "../visuals/CameraRig";
 import { SaveService } from "../state/SaveService";
 import { HudUI, type HudState } from "../ui/HudUI";
+import { FloatingText } from "../ui/FloatingText";
 
 interface SpawnZone {
   minX: number;
@@ -77,6 +78,7 @@ export class DungeonScene implements SceneBase {
     await this.spawnPlayer();
     await this.spawnInitialEnemies(6);
     HudUI.init();
+    FloatingText.init();
     HudUI.onClickAttack(() => {
       this.input?.triggerVirtualAttack();
     });
@@ -84,6 +86,9 @@ export class DungeonScene implements SceneBase {
       this.input?.triggerVirtualDodge();
     });
     HudUI.onClickEnterDungeon(null);
+    HudUI.onClickSpawn(() => {
+      void this.spawnEnemyAt(this.getRandomSpawnPosition());
+    });
 
     console.log("[QA] Dungeon generated");
   }
@@ -93,8 +98,14 @@ export class DungeonScene implements SceneBase {
       return;
     }
 
+    // Update player invincibility state from HUD checkbox
+    this.player.setInvincible(HudUI.getInvincibilityState());
+
     this.player.update(deltaTime);
     const playerDead = this.player.isDead();
+
+    // Update HUD before any potential scene disposal
+    this.updateHud(playerDead);
 
     if (playerDead) {
       this.handlePlayerDeath();
@@ -113,6 +124,9 @@ export class DungeonScene implements SceneBase {
 
       this.cleanupDeadEnemies();
 
+      // Update floating text
+      FloatingText.updateAll(deltaTime);
+
       this.debugSpawnCooldown = Math.max(0, this.debugSpawnCooldown - deltaTime);
       if (this.input.consumeSpawnEnemy() && this.debugSpawnCooldown <= 0) {
         this.debugSpawnCooldown = 0.4;
@@ -122,8 +136,12 @@ export class DungeonScene implements SceneBase {
       this.checkExitPortal();
     }
 
-    this.updateHud(playerDead);
-    this.cameraRig.update(deltaTime);
+    // Early return if scene transition was requested to avoid operating on disposed objects
+    if (this.transitionRequested) {
+      return;
+    }
+
+    this.cameraRig?.update(deltaTime);
   }
 
   getScene(): Scene {
@@ -391,11 +409,21 @@ export class DungeonScene implements SceneBase {
 
     this.startSpawn = new Vector3(0, 0, startMinZ + 2.5);
 
+    // Player spawns at (0, 0, startMinZ + 2.5), exclude spawn positions within 3 units
+    const playerSpawnZ = startMinZ + 2.5;
+    const minSafeDistance = 3.0;
+
     this.spawnZones = [
       {
         minX: -startRoomHalfWidth + 1,
         maxX: startRoomHalfWidth - 1,
         minZ: startMinZ + 1,
+        maxZ: Math.min(startMaxZ - 2, playerSpawnZ - minSafeDistance),
+      },
+      {
+        minX: -startRoomHalfWidth + 1,
+        maxX: startRoomHalfWidth - 1,
+        minZ: Math.max(startMinZ + 1, playerSpawnZ + minSafeDistance),
         maxZ: startMaxZ - 2,
       },
       {
@@ -571,9 +599,8 @@ export class DungeonScene implements SceneBase {
     const hudState: HudState = {
       hp: this.player.hp,
       maxHP: this.player.maxHP,
-      // TODO: Swap placeholder stamina for real dodge resource tracking when available.
-      stamina: this.maxStamina,
-      maxStamina: this.maxStamina,
+      stamina: this.player.stamina,
+      maxStamina: this.player.maxStamina,
       xp: profile.xp,
       level: profile.level,
       xpForNextLevel: SaveService.getXPThreshold(),

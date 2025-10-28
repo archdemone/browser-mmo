@@ -56,6 +56,9 @@ export class HideoutScene implements SceneBase {
     HudUI.onClickEnterDungeon(() => {
       this.tryEnterDungeon();
     });
+    HudUI.onClickSpawn(() => {
+      void this.spawnEnemyAt(this.getRandomSpawnPosition());
+    });
 
     console.log("[QA] Hideout loaded");
   }
@@ -64,6 +67,9 @@ export class HideoutScene implements SceneBase {
     if (!this.scene || !this.input || !this.player || !this.cameraRig) {
       return;
     }
+
+    // Update player invincibility state from HUD checkbox
+    this.player.setInvincible(HudUI.getInvincibilityState());
 
     this.player.update(deltaTime);
 
@@ -243,6 +249,12 @@ export class HideoutScene implements SceneBase {
     const spawnFacing = 0;
 
     this.player.syncFromSave();
+
+    // If player was dead (from dungeon death), respawn them
+    if (this.player.isDead()) {
+      this.player.respawn();
+    }
+
     this.player.setSpawnPoint(spawnPosition, spawnFacing);
     this.player.teleportToSpawn();
     this.player.setCollidersProvider(() => this.colliders);
@@ -270,6 +282,17 @@ export class HideoutScene implements SceneBase {
     const playerPos = this.player.getPosition();
     const distanceSq = Vector3.DistanceSquared(playerPos, this.dungeonDevice.position);
     return distanceSq <= this.deviceInteractDistanceSq;
+  }
+
+  private getRandomSpawnPosition(): Vector3 {
+    // Simple spawn position for hideout testing
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 3 + Math.random() * 4; // 3-7 units from center
+    return new Vector3(
+      Math.cos(angle) * distance,
+      0,
+      Math.sin(angle) * distance
+    );
   }
 
   private tryEnterDungeon(): void {

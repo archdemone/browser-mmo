@@ -1,6 +1,7 @@
 import type { Enemy } from "./Enemy";
 import type { Player } from "./Player";
 import { SaveService } from "../state/SaveService";
+import { FloatingText } from "../ui/FloatingText";
 
 export class CombatSystem {
   playerAttack(player: Player, enemies: Enemy[]): void {
@@ -20,6 +21,7 @@ export class CombatSystem {
 
       if (distSq <= rangeSq) {
         enemy.applyDamage(player.attackDamage);
+        FloatingText.spawnDamageText(player.attackDamage);
         if (enemy.isDead()) {
           enemy.dispose();
           SaveService.addXP(10);

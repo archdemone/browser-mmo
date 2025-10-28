@@ -27,6 +27,33 @@ export class Game {
     this.engine = new Engine(canvas, true);
     this.sceneManager = new SceneManager(this.engine);
 
+    // Attach mouse event listener to canvas after engine creation
+    setTimeout(() => {
+      if (canvas) {
+        const canvasClickHandler = (event: MouseEvent) => {
+          if (event.button === 0) {
+            console.log(`[INPUT] Canvas left-click detected`);
+            const attackButton = document.querySelector('.attack-button') as HTMLElement;
+            if (attackButton) {
+              console.log(`[INPUT] Simulating attack button click from canvas`);
+              attackButton.click();
+              // Don't prevent default to avoid interfering with Babylon.js
+            } else {
+              console.log(`[INPUT] Attack button not found, trying global input`);
+              // Fallback: try to access the global input object
+              const globalInput = (window as any).__qaInput;
+              if (globalInput) {
+                globalInput.attackQueued = true;
+                console.log(`[INPUT] Set attackQueued via global input`);
+              }
+            }
+          }
+        };
+        canvas.addEventListener('mousedown', canvasClickHandler);
+        console.log(`[INPUT] Canvas click listener attached`);
+      }
+    }, 100);
+
     try {
       await this.sceneManager.goToHideout();
     } catch (error) {
