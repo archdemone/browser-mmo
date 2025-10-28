@@ -37,6 +37,10 @@ export class Input {
     window.addEventListener("keyup", this.keyUpHandler);
     window.addEventListener("mousedown", this.mouseDownHandler);
     window.addEventListener("mouseup", this.mouseUpHandler);
+
+    if (typeof window !== "undefined") {
+      (window as unknown as { __qaInput?: Input }).__qaInput = this;
+    }
   }
 
   /**
@@ -112,6 +116,13 @@ export class Input {
     window.removeEventListener("keyup", this.keyUpHandler);
     window.removeEventListener("mousedown", this.mouseDownHandler);
     window.removeEventListener("mouseup", this.mouseUpHandler);
+
+    if (typeof window !== "undefined") {
+      const globalRef = window as unknown as { __qaInput?: Input | undefined };
+      if (globalRef.__qaInput === this) {
+        globalRef.__qaInput = undefined;
+      }
+    }
   }
 
   // TODO: Add mouse support for click-to-move navigation and ability casting hotkeys.

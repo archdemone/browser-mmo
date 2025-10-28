@@ -2,64 +2,46 @@ import type { AnimationGroup, Nullable, Observer } from "babylonjs";
 
 export type LocomotionState = "idle" | "run" | "sprint";
 
-interface PlayerAnimatorGroups {
-  idle: AnimationGroup;
-  run: AnimationGroup;
-  sprint: AnimationGroup;
-  dodge: AnimationGroup;
-  attack: AnimationGroup;
+interface PlayerAnimatorClips {
+  idle?: AnimationGroup | null;
+  run?: AnimationGroup | null;
+  sprint?: AnimationGroup | null;
+  dodge?: AnimationGroup | null;
+  attack?: AnimationGroup | null;
 }
 
 /**
  * Controls the player's character animation blending between locomotion states and one-shot actions.
  */
 export class PlayerAnimator {
-  private readonly locomotionGroups: Record<LocomotionState, AnimationGroup>;
-  private readonly dodgeGroup: AnimationGroup;
-  private readonly attackGroup: AnimationGroup;
-  private desiredLocomotion: LocomotionState;
-  private currentLocomotion: LocomotionState;
+  private readonly clips: PlayerAnimatorClips;
+  private activeLoop: AnimationGroup | null = null;
   private activeOneShot: Nullable<AnimationGroup> = null;
   private oneShotObserver: Nullable<Observer<AnimationGroup>> = null;
+  private desiredLocomotion: LocomotionState = "idle";
+  private currentLocomotion: LocomotionState = "idle";
   private lastLocomotionRequest: LocomotionState | null = null;
 
-  constructor(groups: PlayerAnimatorGroups) {
-    this.locomotionGroups = {
-      idle: groups.idle,
-      run: groups.run,
-      sprint: groups.sprint,
-    };
+  constructor(clips: PlayerAnimatorClips) {
+    this.clips = clips;
+    this.configureLoop(this.clips.idle ?? null);
+    this.configureLoop(this.clips.run ?? null);
+    this.configureLoop(this.clips.sprint ?? null);
+    this.configureOneShot(this.clips.dodge ?? null);
+    this.configureOneShot(this.clips.attack ?? null);
 
-    this.dodgeGroup = groups.dodge;
-    this.attackGroup = groups.attack;
-
-    this.locomotionGroups.idle.loopAnimation = true;
-    this.locomotionGroups.run.loopAnimation = true;
-    this.locomotionGroups.sprint.loopAnimation = true;
-
-    this.dodgeGroup.loopAnimation = false;
-    this.attackGroup.loopAnimation = false;
-
-    this.desiredLocomotion = "idle";
-    this.currentLocomotion = "idle";
-    this.stopAllLocomotion();
-    this.logLocomotionRequest("idle");
-    this.playLocomotion("idle");
+    this.playLocomotionClip("idle");
   }
 
   /**
    * Updates locomotion animations based on movement speed and sprinting flag.
    */
   updateLocomotion(moveSpeed: number, sprinting: boolean): void {
-    const threshold = 0.1;
-    let target: LocomotionState = "run";
+    const speedThreshold = 0.1;
+    let target: LocomotionState = "idle";
 
-    if (moveSpeed < threshold) {
-      target = "idle";
-    } else if (sprinting) {
-      target = "sprint";
-    } else {
-      target = "run";
+    if (moveSpeed > speedThreshold) {
+      target = sprinting ? "sprint" : "run";
     }
 
     this.desiredLocomotion = target;
@@ -69,15 +51,21 @@ export class PlayerAnimator {
       return;
     }
 
-    this.playLocomotion(target);
+    this.playLocomotionClip(target);
   }
 
   /**
    * Plays the dodge roll animation as a one-shot override.
    */
   playDodgeRoll(): void {
+    const clip = this.clips.dodge ?? null;
+    if (!clip) {
+      console.warn("[QA] PlayerAnimator dodge clip missing, safe no-op.");
+      return;
+    }
+
     console.log("[PlayerAnimator] Request dodge roll");
-    this.playOneShot(this.dodgeGroup);
+    this.playOneShot(clip);
     // TODO: During the dodge animation, apply a burst of movement and temporary invulnerability.
   }
 
@@ -85,28 +73,69 @@ export class PlayerAnimator {
    * Plays the attack animation as a one-shot override.
    */
   playAttack(): void {
-    console.log("[PlayerAnimator] Request attack");
-    this.playOneShot(this.attackGroup);
-    // TODO: Trigger the CombatSystem damage application when the attack connects.
-  }
-
-  private playLocomotion(state: LocomotionState): void {
-    const group = this.locomotionGroups[state];
-
-    if (this.currentLocomotion === state && group.isPlaying) {
+    const clip = this.clips.attack ?? null;
+    if (!clip) {
+      console.warn("[QA] PlayerAnimator attack clip missing, safe no-op.");
       return;
     }
 
-    this.stopAllLocomotion();
+    console.log("[PlayerAnimator] Request attack");
+    this.playOneShot(clip);
+    // TODO: Trigger the CombatSystem damage application when the attack connects.
+  }
+
+  private configureLoop(group: AnimationGroup | null): void {
+    if (!group) {
+      return;
+    }
+
+    group.loopAnimation = true;
+    group.stop();
     group.reset();
-    group.start(true);
+  }
+
+  private configureOneShot(group: AnimationGroup | null): void {
+    if (!group) {
+      return;
+    }
+
+    group.loopAnimation = false;
+    group.stop();
+    group.reset();
+  }
+
+  private playLocomotionClip(state: LocomotionState): void {
+    const clip = this.resolveLocomotionClip(state);
+
+    if (this.activeLoop === clip) {
+      if (clip && !clip.isPlaying) {
+        clip.start(true);
+      }
+      this.currentLocomotion = state;
+      return;
+    }
+
+    this.stopActiveLoop();
+
+    if (clip) {
+      clip.reset();
+      clip.start(true);
+    }
+
+    this.activeLoop = clip;
     this.currentLocomotion = state;
   }
 
-  private stopAllLocomotion(): void {
-    for (const group of Object.values(this.locomotionGroups)) {
-      group.stop();
+  private resolveLocomotionClip(state: LocomotionState): AnimationGroup | null {
+    if (state === "sprint") {
+      return this.clips.sprint ?? this.resolveLocomotionClip("run");
     }
+
+    if (state === "run") {
+      return this.clips.run ?? this.resolveLocomotionClip("idle");
+    }
+
+    return this.clips.idle ?? null;
   }
 
   private playOneShot(group: AnimationGroup): void {
@@ -115,7 +144,7 @@ export class PlayerAnimator {
     }
 
     this.stopActiveOneShot();
-    this.stopAllLocomotion();
+    this.stopActiveLoop();
 
     this.activeOneShot = group;
     group.reset();
@@ -132,8 +161,17 @@ export class PlayerAnimator {
       }
 
       this.activeOneShot = null;
-      this.playLocomotion(this.desiredLocomotion);
+      this.playLocomotionClip(this.desiredLocomotion);
     });
+  }
+
+  private stopActiveLoop(): void {
+    if (!this.activeLoop) {
+      return;
+    }
+
+    this.activeLoop.stop();
+    this.activeLoop = null;
   }
 
   private stopActiveOneShot(): void {
@@ -157,5 +195,9 @@ export class PlayerAnimator {
 
     console.log(`[PlayerAnimator] Request ${state} locomotion`);
     this.lastLocomotionRequest = state;
+  }
+
+  static createEmpty(): PlayerAnimator {
+    return new PlayerAnimator({});
   }
 }
