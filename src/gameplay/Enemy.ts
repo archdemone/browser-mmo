@@ -58,13 +58,15 @@ export class Enemy {
       Enemy.resetVisual(rootMesh, spawnPos);
       animator?.cancelAttack();
       animator?.updateLocomotion(0, false);
+      animator?.cancelAttack();
+      animator?.updateLocomotion(0, false);
       return new Enemy(scene, rootMesh, animator, spawnPos, attackDuration, pooledVisual);
     }
 
     try {
       const { rootMesh, animator } = await createEnemyCharacter(scene);
-      const durationSeconds = Math.max(0.1, animator.getAttackDuration() || 0);
-      return new Enemy(scene, rootMesh, animator, spawnPos, durationSeconds, null);
+      const attackDuration = Math.max(0.1, animator.getAttackDuration() || 0);
+      return new Enemy(scene, rootMesh, animator, spawnPos, attackDuration, null);
     } catch (error) {
       const message =
         error instanceof Error

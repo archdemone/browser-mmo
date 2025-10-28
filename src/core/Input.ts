@@ -7,13 +7,13 @@ export class Input {
   private attackQueued: boolean = false;
   private spawnEnemyQueued: boolean = false;
   private interactQueued: boolean = false;
+  private readonly virtualMove: Set<"up" | "down" | "left" | "right"> = new Set();
+  private virtualSprint: boolean = false;
+  private debugAxisOverride: { x: number; z: number } | null = null;
   private readonly keyDownHandler: (event: KeyboardEvent) => void;
   private readonly keyUpHandler: (event: KeyboardEvent) => void;
   private readonly mouseDownHandler: (event: MouseEvent) => void;
   private readonly mouseUpHandler: (event: MouseEvent) => void;
-  private readonly virtualMove: Set<"up" | "down" | "left" | "right"> = new Set();
-  private virtualSprint: boolean = false;
-  private debugAxisOverride: { x: number; z: number } | null = null;
 
   constructor() {
     this.keyDownHandler = (event: KeyboardEvent) => {
@@ -50,6 +50,10 @@ export class Input {
     window.addEventListener("keyup", this.keyUpHandler);
     window.addEventListener("mousedown", this.mouseDownHandler);
     window.addEventListener("mouseup", this.mouseUpHandler);
+
+    if (typeof window !== "undefined") {
+      (window as unknown as { __qaInput?: Input }).__qaInput = this;
+    }
   }
 
   /**
@@ -185,6 +189,16 @@ export class Input {
     window.removeEventListener("keyup", this.keyUpHandler);
     window.removeEventListener("mousedown", this.mouseDownHandler);
     window.removeEventListener("mouseup", this.mouseUpHandler);
+
+    if (typeof window !== "undefined") {
+      const globalRef = window as unknown as { __qaInput?: Input | undefined };
+      if (globalRef.__qaInput === this) {
+        globalRef.__qaInput = undefined;
+      }
+    }
+
+    this.virtualMove.clear();
+    this.virtualSprint = false;
   }
 
   // TODO: Add mouse support for click-to-move navigation and ability casting hotkeys.

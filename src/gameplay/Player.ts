@@ -163,11 +163,25 @@ export class Player {
     }
 
     if (this.input.consumeDodgeRoll()) {
-      this.forceDodgeOnce();
+      const baseDirection =
+        movementDirection.lengthSquared() > 0
+          ? movementDirection
+          : this.lastMoveDirection.lengthSquared() > 0
+          ? this.lastMoveDirection
+          : this.getFacingDirection();
+      if (baseDirection.lengthSquared() > 0) {
+        this.dodgeDirection.copyFrom(baseDirection);
+      } else {
+        this.dodgeDirection.set(0, 0, 1);
+      }
+      this.dodgeDirection.normalize();
+      this.dodgeTimeRemaining = this.dodgeDuration;
+      this.animator.playDodgeRoll();
     }
 
     if (this.input.consumeAttack()) {
-      this.forceAttackOnce();
+      this.animator.playAttack({ forceRestart: true });
+      this.attackTriggeredThisFrame = true;
     }
 
     if (this.debugLoggingActive) {
@@ -245,50 +259,6 @@ export class Player {
 
   teleportToSpawn(): void {
     this.teleportTo(this.spawnPoint, this.spawnRotationY);
-  }
-
-  forceAttackOnce(): void {
-    if (this.dead) {
-      return;
-    }
-    this.animator.playAttack({ forceRestart: true });
-    this.attackTriggeredThisFrame = true;
-  }
-
-  forceDodgeOnce(): void {
-    if (this.dead) {
-      return;
-    }
-    const baseDirection =
-      this.lastMoveDirection.lengthSquared() > 0 ? this.lastMoveDirection : this.getFacingDirection();
-    if (baseDirection.lengthSquared() === 0) {
-      this.dodgeDirection.set(0, 0, 1);
-    } else {
-      this.dodgeDirection.copyFrom(baseDirection.normalize());
-    }
-    this.dodgeTimeRemaining = this.dodgeDuration;
-    this.animator.playDodgeRoll({ forceRestart: true });
-  }
-
-  respawn(): void {
-    if (!this.dead) {
-      return;
-    }
-    SaveService.resetHPFull();
-    this.syncFromSave();
-    this.dead = false;
-    this.contactIframesTimer = 1.0;
-    this.dodgeTimeRemaining = 0;
-    this.dodgeDirection.set(0, 0, 1);
-    this.lastMoveDirection.set(0, 0, 1);
-    this.teleportToSpawn();
-    this.animator.cancelAttack();
-    this.animator.updateLocomotion(0, false);
-    console.log(
-      `[COMBAT] Player respawned at (${this.mesh.position.x.toFixed(2)}, ${this.mesh.position.z.toFixed(
-        2
-      )}) with full HP (${this.hp}/${this.maxHP})`
-    );
   }
 
   private applyDisplacement(displacement: Vector3, colliders: PlayerCollider[] | null): Vector3 {
@@ -398,5 +368,26 @@ export class Player {
     this.dodgeTimeRemaining = 0;
     this.animator.cancelAttack();
     this.animator.updateLocomotion(0, false);
+  }
+
+  respawn(): void {
+    if (!this.dead) {
+      return;
+    }
+    SaveService.resetHPFull();
+    this.syncFromSave();
+    this.dead = false;
+    this.contactIframesTimer = 1.0;
+    this.dodgeTimeRemaining = 0;
+    this.dodgeDirection.set(0, 0, 1);
+    this.lastMoveDirection.set(0, 0, 1);
+    this.teleportToSpawn();
+    this.animator.cancelAttack();
+    this.animator.updateLocomotion(0, false);
+    console.log(
+      `[COMBAT] Player respawned at (${this.mesh.position.x.toFixed(2)}, ${this.mesh.position.z.toFixed(
+        2
+      )}) with full HP (${this.hp}/${this.maxHP})`
+    );
   }
 }

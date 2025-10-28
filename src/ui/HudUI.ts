@@ -47,6 +47,7 @@ class HudUIImpl {
 
     const existingRoot = document.getElementById("hud-root") as HTMLDivElement | null;
     if (existingRoot) {
+      this.root = existingRoot;
       this.captureElements(existingRoot);
       return;
     }
@@ -264,6 +265,7 @@ class HudUIImpl {
   }
 
   private captureElements(root: HTMLDivElement): void {
+    // In case of pre-existing markup (dev hot reload), rebuild structure.
     root.innerHTML = "";
     this.root = null;
     this.hpBarInner = null;
@@ -366,13 +368,17 @@ class HudUIImpl {
   private attachEventHandlers(): void {
     if (this.attackSlot) {
       this.attackSlot.addEventListener("click", () => {
-        this.attackHandler?.();
+        if (this.attackHandler) {
+          this.attackHandler();
+        }
       });
     }
 
     if (this.dodgeSlot) {
       this.dodgeSlot.addEventListener("click", () => {
-        this.dodgeHandler?.();
+        if (this.dodgeHandler) {
+          this.dodgeHandler();
+        }
       });
     }
 

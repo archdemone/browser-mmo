@@ -352,7 +352,7 @@ export class DungeonScene implements SceneBase {
 
       this.createWall(
         "dungeon.wall.end.south.right",
-        new VectorVector3(
+        new Vector3(
           corridorHalfWidth + endSouthSegmentWidth / 2,
           wallHeight / 2,
           endMinZ - wallThickness / 2
