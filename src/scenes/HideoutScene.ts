@@ -306,6 +306,14 @@ export class HideoutScene implements SceneBase {
       this.tryEnterDungeon();
     }
 
+    // Handle camera zoom input
+    const zoomDelta = this.input.consumeZoomDelta();
+    if (zoomDelta !== 0) {
+      // Scale the zoom delta for smoother control (wheel delta is usually around 100-300)
+      const zoomAmount = zoomDelta * 0.01;
+      this.cameraRig.zoomBy(zoomAmount);
+    }
+
     this.cameraRig.update(deltaTime);
     this.updateHud(nearDevice);
   }

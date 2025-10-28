@@ -136,6 +136,14 @@ export class DungeonScene implements SceneBase {
       this.checkExitPortal();
     }
 
+    // Handle camera zoom input
+    const zoomDelta = this.input?.consumeZoomDelta() ?? 0;
+    if (zoomDelta !== 0 && this.cameraRig) {
+      // Scale the zoom delta for smoother control (wheel delta is usually around 100-300)
+      const zoomAmount = zoomDelta * 0.01;
+      this.cameraRig.zoomBy(zoomAmount);
+    }
+
     // Early return if scene transition was requested to avoid operating on disposed objects
     if (this.transitionRequested) {
       return;

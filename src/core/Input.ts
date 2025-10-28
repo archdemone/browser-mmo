@@ -16,6 +16,8 @@ export class Input {
   private readonly mouseUpHandler: (event: MouseEvent) => void;
   private readonly pointerDownHandler: (event: PointerEvent) => void;
   private readonly pointerUpHandler: (event: PointerEvent) => void;
+  private readonly wheelHandler: (event: WheelEvent) => void;
+  private zoomDelta: number = 0;
 
   constructor() {
     this.keyDownHandler = (event: KeyboardEvent) => {
@@ -78,11 +80,17 @@ export class Input {
       // Reserved for future pointer state tracking.
     };
 
+    this.wheelHandler = (event: WheelEvent) => {
+      // Accumulate zoom delta (negative delta = zoom in, positive = zoom out)
+      this.zoomDelta += event.deltaY;
+    };
+
     // Attach to window with capture to intercept events before canvas
     window.addEventListener("keydown", this.keyDownHandler, { capture: true });
     window.addEventListener("keyup", this.keyUpHandler, { capture: true });
     window.addEventListener("pointerdown", this.pointerDownHandler, { capture: true });
     window.addEventListener("pointerup", this.pointerUpHandler, { capture: true });
+    window.addEventListener("wheel", this.wheelHandler, { capture: true });
 
     if (typeof window !== "undefined") {
       (window as unknown as { __qaInput?: Input }).__qaInput = this;
@@ -182,6 +190,16 @@ export class Input {
     return false;
   }
 
+  /**
+   * Returns the accumulated zoom delta and resets it to 0.
+   * Positive values indicate zoom out, negative values indicate zoom in.
+   */
+  consumeZoomDelta(): number {
+    const delta = this.zoomDelta;
+    this.zoomDelta = 0;
+    return delta;
+  }
+
   triggerSpawnEnemy(): void {
     this.spawnEnemyQueued = true;
   }
@@ -222,6 +240,7 @@ export class Input {
     window.removeEventListener("keyup", this.keyUpHandler, { capture: true });
     window.removeEventListener("pointerdown", this.pointerDownHandler, { capture: true });
     window.removeEventListener("pointerup", this.pointerUpHandler, { capture: true });
+    window.removeEventListener("wheel", this.wheelHandler, { capture: true });
 
     if (typeof window !== "undefined") {
       const globalRef = window as unknown as { __qaInput?: Input | undefined };
@@ -232,6 +251,7 @@ export class Input {
 
     this.virtualMove.clear();
     this.virtualSprint = false;
+    this.zoomDelta = 0;
   }
 
   // TODO: Add mouse support for click-to-move navigation and ability casting hotkeys.

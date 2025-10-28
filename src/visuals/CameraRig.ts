@@ -9,7 +9,12 @@ export class CameraRig {
   private target: TransformNode | null;
   private readonly alpha: number;
   private readonly beta: number;
-  private readonly radius: number;
+  private readonly defaultRadius: number;
+  private currentRadius: number;
+  private targetRadius: number;
+  private readonly minRadius: number;
+  private readonly maxRadius: number;
+  private readonly zoomSpeed: number;
   private readonly targetOffset: Vector3;
   private debugLogTimeRemaining: number = 0;
 
@@ -18,17 +23,22 @@ export class CameraRig {
     this.target = target;
     this.alpha = Math.PI * 1.25;
     this.beta = 1.0;
-    this.radius = 15;
+    this.defaultRadius = 15;
+    this.minRadius = 8;
+    this.maxRadius = 25;
+    this.zoomSpeed = 20; // Units per second
+    this.currentRadius = this.defaultRadius;
+    this.targetRadius = this.defaultRadius;
     this.targetOffset = new Vector3(0, 1.6, 0);
 
     const initialTarget = target?.getAbsolutePosition() ?? Vector3.Zero();
-    this.camera = new ArcRotateCamera("camera.arpg", this.alpha, this.beta, this.radius, initialTarget, scene);
+    this.camera = new ArcRotateCamera("camera.arpg", this.alpha, this.beta, this.currentRadius, initialTarget, scene);
     this.camera.lowerAlphaLimit = this.alpha;
     this.camera.upperAlphaLimit = this.alpha;
     this.camera.lowerBetaLimit = this.beta;
     this.camera.upperBetaLimit = this.beta;
-    this.camera.lowerRadiusLimit = this.radius;
-    this.camera.upperRadiusLimit = this.radius;
+    this.camera.lowerRadiusLimit = this.minRadius;
+    this.camera.upperRadiusLimit = this.maxRadius;
     this.camera.panningSensibility = 0;
     this.camera.useAutoRotationBehavior = false;
     this.camera.allowUpsideDown = false;
@@ -51,10 +61,21 @@ export class CameraRig {
       return;
     }
 
+    // Smoothly interpolate towards target radius
+    if (deltaTime !== undefined) {
+      const delta = this.targetRadius - this.currentRadius;
+      const maxDelta = this.zoomSpeed * deltaTime;
+      if (Math.abs(delta) > maxDelta) {
+        this.currentRadius += Math.sign(delta) * maxDelta;
+      } else {
+        this.currentRadius = this.targetRadius;
+      }
+    }
+
     const playerPosition = this.target.getAbsolutePosition().add(this.targetOffset);
     this.camera.alpha = this.alpha;
     this.camera.beta = this.beta;
-    this.camera.radius = this.radius;
+    this.camera.radius = this.currentRadius;
     this.camera.setTarget(playerPosition);
 
     if (this.debugLogTimeRemaining > 0) {
@@ -83,6 +104,35 @@ export class CameraRig {
 
   enableDebugLogging(seconds: number): void {
     this.debugLogTimeRemaining = Math.max(this.debugLogTimeRemaining, seconds);
+  }
+
+  /**
+   * Zoom the camera by the specified delta amount.
+   * Positive values zoom out, negative values zoom in.
+   */
+  zoomBy(delta: number): void {
+    this.targetRadius = Math.max(this.minRadius, Math.min(this.maxRadius, this.targetRadius + delta));
+  }
+
+  /**
+   * Set the camera zoom to a specific radius.
+   */
+  setZoom(radius: number): void {
+    this.targetRadius = Math.max(this.minRadius, Math.min(this.maxRadius, radius));
+  }
+
+  /**
+   * Reset the camera zoom to the default radius.
+   */
+  resetZoom(): void {
+    this.targetRadius = this.defaultRadius;
+  }
+
+  /**
+   * Get the current zoom level (0 = fully zoomed in, 1 = fully zoomed out).
+   */
+  getZoomLevel(): number {
+    return (this.currentRadius - this.minRadius) / (this.maxRadius - this.minRadius);
   }
 
   // TODO: Add camera shake effects and smooth dampening/lerp options for future polish.
