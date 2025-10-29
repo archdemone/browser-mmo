@@ -52,9 +52,230 @@ const createDefaultSettings = (): PostFXSettings => ({
   fxaaEnabled: false,
 });
 
+const createNeutralSettings = (): PostFXSettings => ({
+  bloomEnabled: false,
+  bloomWeight: 0,
+  bloomThreshold: 1,
+  bloomKernel: 24,
+  vignetteWeight: 0,
+  vignetteColor: new Color3(0, 0, 0),
+  vignetteBlendMode: ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY,
+  exposure: 1,
+  contrast: 1,
+  saturation: 1,
+  globalSaturation: 0,
+  shadowsHue: 0,
+  shadowsDensity: 0,
+  shadowsSaturation: 0,
+  shadowsValue: 0,
+  highlightsHue: 0,
+  highlightsDensity: 0,
+  highlightsSaturation: 0,
+  highlightsValue: 0,
+  fxaaEnabled: false,
+});
+
+export interface PostFXPresetConfig {
+  bloomEnabled?: boolean;
+  bloomWeight?: number;
+  bloomThreshold?: number;
+  bloomKernel?: number;
+  vignetteWeight?: number;
+  vignetteColor?: [number, number, number] | { r: number; g: number; b: number };
+  vignetteBlendMode?: number | "multiply" | "opaque";
+  exposure?: number;
+  contrast?: number;
+  saturation?: number;
+  globalSaturation?: number;
+  shadowsHue?: number;
+  shadowsDensity?: number;
+  shadowsSaturation?: number;
+  shadowsValue?: number;
+  highlightsHue?: number;
+  highlightsDensity?: number;
+  highlightsSaturation?: number;
+  highlightsValue?: number;
+  fxaaEnabled?: boolean;
+}
+
 export class PostFXConfig {
   private static pipeline: DefaultRenderingPipeline | null = null;
   static settings: PostFXSettings = createDefaultSettings();
+
+  static getDefaultSettings(): PostFXSettings {
+    return createDefaultSettings();
+  }
+
+  static applyPreset(
+    preset?: PostFXPresetConfig | null,
+    intensityScale: number = 1
+  ): void {
+  static applyPreset(preset?: PostFXPresetConfig | null): void {
+    const defaults = createDefaultSettings();
+    if (!preset || typeof preset !== "object") {
+      PostFXConfig.settings = defaults;
+      return;
+    }
+
+    const settings = { ...defaults };
+    const neutral = createNeutralSettings();
+    const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+    const scale = clamp01(intensityScale);
+
+    const assignNumber = <K extends keyof PostFXSettings>(
+      key: K,
+      value: unknown
+    ) => {
+      if (value === undefined) {
+        return;
+      }
+      if (typeof value === "number" && Number.isFinite(value)) {
+        settings[key] = value as PostFXSettings[K];
+      } else {
+        console.warn(
+          `[PostFXConfig] Invalid numeric value for ${String(key)} in preset. Received:`,
+          value
+        );
+      }
+    };
+
+    const assignBoolean = <K extends keyof PostFXSettings>(
+      key: K,
+      value: unknown
+    ) => {
+      if (value === undefined) {
+        return;
+      }
+      if (typeof value === "boolean") {
+        settings[key] = value as PostFXSettings[K];
+      } else {
+        console.warn(
+          `[PostFXConfig] Invalid boolean value for ${String(key)} in preset. Received:`,
+          value
+        );
+      }
+    };
+
+    assignBoolean("bloomEnabled", preset.bloomEnabled);
+    assignNumber("bloomWeight", preset.bloomWeight);
+    assignNumber("bloomThreshold", preset.bloomThreshold);
+    assignNumber("bloomKernel", preset.bloomKernel);
+    assignNumber("vignetteWeight", preset.vignetteWeight);
+    assignNumber("exposure", preset.exposure);
+    assignNumber("contrast", preset.contrast);
+    assignNumber("saturation", preset.saturation);
+    assignNumber("globalSaturation", preset.globalSaturation);
+    assignNumber("shadowsHue", preset.shadowsHue);
+    assignNumber("shadowsDensity", preset.shadowsDensity);
+    assignNumber("shadowsSaturation", preset.shadowsSaturation);
+    assignNumber("shadowsValue", preset.shadowsValue);
+    assignNumber("highlightsHue", preset.highlightsHue);
+    assignNumber("highlightsDensity", preset.highlightsDensity);
+    assignNumber("highlightsSaturation", preset.highlightsSaturation);
+    assignNumber("highlightsValue", preset.highlightsValue);
+    assignBoolean("fxaaEnabled", preset.fxaaEnabled);
+
+    if (preset.vignetteColor !== undefined) {
+      const color = preset.vignetteColor;
+      if (Array.isArray(color) && color.length === 3) {
+        const [r, g, b] = color;
+        if ([r, g, b].every((component) => typeof component === "number")) {
+          settings.vignetteColor = new Color3(r, g, b);
+        } else {
+          console.warn("[PostFXConfig] Vignette color array must contain numbers.", color);
+        }
+      } else if (
+        typeof color === "object" &&
+        color !== null &&
+        "r" in color &&
+        "g" in color &&
+        "b" in color
+      ) {
+        const r = (color as { r: unknown }).r;
+        const g = (color as { g: unknown }).g;
+        const b = (color as { b: unknown }).b;
+        if ([r, g, b].every((component) => typeof component === "number")) {
+          settings.vignetteColor = new Color3(r as number, g as number, b as number);
+        } else {
+          console.warn("[PostFXConfig] Vignette color object must contain numeric r/g/b.", color);
+        }
+      } else {
+        console.warn("[PostFXConfig] Unsupported vignette color value.", color);
+      }
+    }
+
+    if (preset.vignetteBlendMode !== undefined) {
+      const blend = preset.vignetteBlendMode;
+      if (typeof blend === "number") {
+        settings.vignetteBlendMode = blend;
+      } else if (typeof blend === "string") {
+        if (blend.toLowerCase() === "multiply") {
+          settings.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
+        } else if (blend.toLowerCase() === "opaque") {
+          settings.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_OPAQUE;
+        } else {
+          console.warn("[PostFXConfig] Unknown vignette blend mode string.", blend);
+        }
+      } else {
+        console.warn("[PostFXConfig] Unsupported vignette blend mode value.", blend);
+      }
+    }
+
+    const lerp = (from: number, to: number): number => from + (to - from) * scale;
+
+    settings.bloomEnabled = scale > 0 && settings.bloomEnabled;
+    settings.bloomWeight = lerp(neutral.bloomWeight, settings.bloomWeight);
+    settings.bloomThreshold = lerp(
+      neutral.bloomThreshold,
+      settings.bloomThreshold
+    );
+    settings.bloomKernel = Math.max(
+      0,
+      Math.round(lerp(neutral.bloomKernel, settings.bloomKernel))
+    );
+    settings.vignetteWeight = lerp(neutral.vignetteWeight, settings.vignetteWeight);
+    settings.vignetteColor = Color3.Lerp(
+      neutral.vignetteColor,
+      settings.vignetteColor,
+      scale
+    );
+    settings.vignetteBlendMode = scale > 0
+      ? settings.vignetteBlendMode
+      : neutral.vignetteBlendMode;
+    settings.exposure = lerp(neutral.exposure, settings.exposure);
+    settings.contrast = lerp(neutral.contrast, settings.contrast);
+    settings.saturation = lerp(neutral.saturation, settings.saturation);
+    settings.globalSaturation = lerp(
+      neutral.globalSaturation,
+      settings.globalSaturation
+    );
+    settings.shadowsHue = lerp(neutral.shadowsHue, settings.shadowsHue);
+    settings.shadowsDensity = lerp(
+      neutral.shadowsDensity,
+      settings.shadowsDensity
+    );
+    settings.shadowsSaturation = lerp(
+      neutral.shadowsSaturation,
+      settings.shadowsSaturation
+    );
+    settings.shadowsValue = lerp(neutral.shadowsValue, settings.shadowsValue);
+    settings.highlightsHue = lerp(neutral.highlightsHue, settings.highlightsHue);
+    settings.highlightsDensity = lerp(
+      neutral.highlightsDensity,
+      settings.highlightsDensity
+    );
+    settings.highlightsSaturation = lerp(
+      neutral.highlightsSaturation,
+      settings.highlightsSaturation
+    );
+    settings.highlightsValue = lerp(
+      neutral.highlightsValue,
+      settings.highlightsValue
+    );
+    settings.fxaaEnabled = scale > 0 && settings.fxaaEnabled;
+
+    PostFXConfig.settings = settings;
+  }
 
   static apply(scene: Scene): DefaultRenderingPipeline | null {
     const camera = scene.activeCamera;
