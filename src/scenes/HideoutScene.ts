@@ -23,6 +23,8 @@ import { HudUI, type HudState } from "../ui/HudUI";
 import { SaveService } from "../state/SaveService";
 import { Enemy } from "../gameplay/Enemy";
 import { PostFXConfig } from "../visuals/PostFXConfig";
+import { VisualPresetManager, type LightPresetConfig } from "../visuals/VisualPresetManager";
+import { EffectsFactory } from "../visuals/EffectsFactory";
 import { MaterialLibrary } from "../visuals/MaterialLibrary";
 
 interface OccluderController {
@@ -107,6 +109,16 @@ export class HideoutScene implements SceneBase {
   private rampEndZ: number = -0.8;
   private rampHalfWidth: number = 2.6;
   private spawnArea: SpawnArea = { minX: -4, maxX: 4, minZ: -1, maxZ: 4 };
+  private warmLights: PointLight[] = [];
+  private coolFillLight: PointLight | null = null;
+  private hemiLight: HemisphericLight | null = null;
+  private lightingDefaults = {
+    warmLightIntensity: 0.8,
+    warmLightRange: 6,
+    coolFillIntensity: 0.7,
+    coolFillRange: 21.8,
+    hemiIntensity: 0.55,
+  };
 
   constructor(sceneManager: SceneManager) {
     this.sceneManager = sceneManager;
@@ -237,6 +249,19 @@ export class HideoutScene implements SceneBase {
   }
 
   async load(engine: Engine): Promise<void> {
+    await VisualPresetManager.initialize();
+
+    this.warmLights = [];
+    this.coolFillLight = null;
+    this.hemiLight = null;
+    Object.assign(this.lightingDefaults, {
+      warmLightIntensity: 0.8,
+      warmLightRange: 6,
+      coolFillIntensity: 0.7,
+      coolFillRange: 21.8,
+      hemiIntensity: 0.55,
+    });
+
     this.scene = new Scene(engine);
 
     // Slightly higher ambient so silhouettes aren't totally lost.
@@ -253,14 +278,16 @@ export class HideoutScene implements SceneBase {
     hemi.diffuse = new Color3(0.32, 0.45, 0.62);     // a bit brighter, bluish fill
     hemi.groundColor = new Color3(0.18, 0.22, 0.30); // subtle bounce
     hemi.specular = Color3.Black(); // still matte, no shiny plastic look
+    this.hemiLight = hemi;
+    this.lightingDefaults.hemiIntensity = hemi.intensity;
 
     this.input = new Input();
     await this.buildHideoutGeometry();
     await this.spawnPlayer();
-    if (this.scene) {
-      PostFXConfig.apply(this.scene);
-    }
+    this.applyCurrentVisualPreset();
     HudUI.init();
+    HudUI.setVisualPresetLabel(VisualPresetManager.getActivePresetName());
+    HudUI.setFxIntensity(VisualPresetManager.getEffectIntensity());
     HudUI.onClickAttack(() => {
       this.input?.triggerVirtualAttack();
     });
@@ -272,6 +299,12 @@ export class HideoutScene implements SceneBase {
     });
     HudUI.onClickSpawn(() => {
       void this.spawnEnemyAt(this.getRandomSpawnPosition());
+    });
+    HudUI.onClickVisualPreset(() => {
+      this.cycleVisualPreset("HUD button");
+    });
+    HudUI.onFxIntensityChanged((value) => {
+      this.updateFxIntensity(value);
     });
 
     console.log("[QA] Hideout loaded");
@@ -303,6 +336,10 @@ export class HideoutScene implements SceneBase {
 
     if (this.interactCooldown > 0) {
       this.interactCooldown = Math.max(0, this.interactCooldown - deltaTime);
+    }
+
+    if (this.input.consumePostFxToggle()) {
+      this.cycleVisualPreset("keyboard");
     }
 
     // Consume debug spawn input so hideout never spawns enemies.
@@ -362,6 +399,9 @@ export class HideoutScene implements SceneBase {
     this.colliders = [];
     this.transitionRequested = false;
     this.interactCooldown = 0;
+    this.warmLights = [];
+    this.coolFillLight = null;
+    this.hemiLight = null;
   }
 
   private updateHud(nearDevice: boolean): void {
@@ -902,6 +942,7 @@ export class HideoutScene implements SceneBase {
     ];
 
     // slightly bigger pools, less nuclear center, smoother falloff
+    this.warmLights = [];
     warmLightPositions.forEach((position, index) => {
       const pointLight = new PointLight(
         `hideout.warmLight.${index}`,
@@ -913,6 +954,9 @@ export class HideoutScene implements SceneBase {
       pointLight.intensity = 0.8; // was 0.95, so the middle isn't pure white
       pointLight.range = 6.0;     // was 4.6, spreads farther across floor
       pointLight.falloffType = PointLight.FALLOFF_PHYSICAL;
+      this.warmLights.push(pointLight);
+      this.lightingDefaults.warmLightIntensity = pointLight.intensity;
+      this.lightingDefaults.warmLightRange = pointLight.range;
     });
 
     // this is our "soft room glow," not just a pin light
@@ -926,6 +970,91 @@ export class HideoutScene implements SceneBase {
     fillLight.intensity = 0.7;                          // was 0.42
     fillLight.range     = Math.max(layout.width, layout.depth) * 1.3; // was 0.95
     fillLight.falloffType = PointLight.FALLOFF_PHYSICAL;
+    this.coolFillLight = fillLight;
+    this.lightingDefaults.coolFillIntensity = fillLight.intensity;
+    this.lightingDefaults.coolFillRange = fillLight.range;
+  }
+
+  private applyCurrentVisualPreset(): void {
+    const scene = this.scene;
+    if (!scene) {
+      console.warn("[HideoutScene] Cannot apply visual preset without an active scene.");
+      return;
+    }
+
+    const preset = VisualPresetManager.getActivePreset();
+    const intensityScale = VisualPresetManager.getEffectIntensity();
+    PostFXConfig.applyPreset(preset.postfx ?? undefined, intensityScale);
+    PostFXConfig.apply(scene);
+    this.applyLightPreset(preset.lights ?? undefined, intensityScale);
+    EffectsFactory.setGlobalIntensity(intensityScale);
+    HudUI.setVisualPresetLabel(VisualPresetManager.getActivePresetName());
+    HudUI.setFxIntensity(intensityScale);
+  }
+
+  private cycleVisualPreset(source: string): void {
+    const presetName = VisualPresetManager.cyclePreset();
+    console.log(`[QA] Switched visual preset to ${presetName} via ${source}`);
+    this.applyCurrentVisualPreset();
+  }
+
+  private updateFxIntensity(value: number): void {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    const clamped = Math.max(0, Math.min(1, value));
+    VisualPresetManager.setEffectIntensity(clamped);
+    HudUI.setFxIntensity(clamped);
+    this.applyCurrentVisualPreset();
+  }
+
+  private applyLightPreset(
+    preset?: LightPresetConfig | null,
+    intensityScale: number = 1
+  ): void {
+    const scale = Math.max(0, Math.min(1, intensityScale));
+    const defaults = this.lightingDefaults;
+
+    const resolve = (value: number | undefined, fallback: number, label: string): number => {
+      if (value === undefined) {
+        return fallback;
+      }
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+      console.warn(
+        `[HideoutScene] Invalid ${label} in visual preset. Expected finite number, received`,
+        value
+      );
+      return fallback;
+    };
+
+    const warmIntensityBase = resolve(preset?.warmLightIntensity ?? undefined, defaults.warmLightIntensity, "warmLightIntensity");
+    const warmRangeBase = resolve(preset?.warmLightRange ?? undefined, defaults.warmLightRange, "warmLightRange");
+    const coolIntensityBase = resolve(preset?.coolFillIntensity ?? undefined, defaults.coolFillIntensity, "coolFillIntensity");
+    const coolRangeBase = resolve(preset?.coolFillRange ?? undefined, defaults.coolFillRange, "coolFillRange");
+    const hemiIntensityBase = resolve(preset?.hemiIntensity ?? undefined, defaults.hemiIntensity, "hemiIntensity");
+
+    const warmIntensity = warmIntensityBase * scale;
+    const warmRange = warmRangeBase * scale;
+    const coolIntensity = coolIntensityBase * scale;
+    const coolRange = coolRangeBase * scale;
+    const hemiIntensity = hemiIntensityBase * scale;
+
+    for (const light of this.warmLights) {
+      light.intensity = warmIntensity;
+      light.range = warmRange;
+    }
+
+    if (this.coolFillLight) {
+      this.coolFillLight.intensity = coolIntensity;
+      this.coolFillLight.range = coolRange;
+    }
+
+    if (this.hemiLight) {
+      this.hemiLight.intensity = hemiIntensity;
+    }
   }
 
   private placeDungeonDevice(scene: Scene, materials: HideoutMaterials, platform: PlatformLayout): void {

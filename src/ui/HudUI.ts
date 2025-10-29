@@ -36,8 +36,15 @@ class HudUIImpl {
   private dodgeHandler: (() => void) | null = null;
   private enterHandler: (() => void) | null = null;
   private spawnHandler: (() => void) | null = null;
+  private visualPresetHandler: (() => void) | null = null;
   private invincibilityCheckbox: HTMLInputElement | null = null;
   private spawnButton: HTMLButtonElement | null = null;
+  private visualPresetButton: HTMLButtonElement | null = null;
+  private visualPresetName: string = "gameplay";
+  private fxSlider: HTMLInputElement | null = null;
+  private fxSliderValue: HTMLSpanElement | null = null;
+  private fxIntensityHandler: ((value: number) => void) | null = null;
+  private fxIntensity: number = 1;
 
   init(): void {
     if (typeof document === "undefined") {
@@ -180,6 +187,75 @@ class HudUIImpl {
     invincibilityContainer.appendChild(invincibilityLabel);
     topLeft.appendChild(invincibilityContainer);
 
+    // Visual preset toggle button (debug art direction control)
+    this.visualPresetButton = document.createElement("button");
+    this.visualPresetButton.textContent = this.formatPresetLabel(this.visualPresetName);
+    this.visualPresetButton.style.padding = "4px 10px";
+    this.visualPresetButton.style.fontSize = "11px";
+    this.visualPresetButton.style.background = "rgba(40, 60, 90, 0.6)";
+    this.visualPresetButton.style.border = "1px solid rgba(200, 220, 255, 0.35)";
+    this.visualPresetButton.style.borderRadius = "4px";
+    this.visualPresetButton.style.color = "#dbe7ff";
+    this.visualPresetButton.style.cursor = "pointer";
+    this.visualPresetButton.style.pointerEvents = "auto";
+    this.visualPresetButton.style.alignSelf = "flex-start";
+    this.visualPresetButton.title = "Cycle visual preset (keyboard: P)";
+    this.visualPresetButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (this.visualPresetHandler) {
+        this.visualPresetHandler();
+      }
+    });
+    topLeft.appendChild(this.visualPresetButton);
+
+    const fxSliderContainer = document.createElement("div");
+    fxSliderContainer.style.display = "flex";
+    fxSliderContainer.style.alignItems = "center";
+    fxSliderContainer.style.gap = "8px";
+    fxSliderContainer.style.pointerEvents = "auto";
+    fxSliderContainer.style.alignSelf = "flex-start";
+
+    const fxLabel = document.createElement("span");
+    fxLabel.textContent = "FX Intensity";
+    fxLabel.style.fontSize = "11px";
+    fxLabel.style.opacity = "0.85";
+    fxSliderContainer.appendChild(fxLabel);
+
+    this.fxSlider = document.createElement("input");
+    this.fxSlider.type = "range";
+    this.fxSlider.min = "0";
+    this.fxSlider.max = "100";
+    this.fxSlider.value = Math.round(this.fxIntensity * 100).toString();
+    this.fxSlider.style.width = "120px";
+    this.fxSlider.style.cursor = "pointer";
+    this.fxSlider.addEventListener("input", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const target = event.currentTarget as HTMLInputElement;
+      const value = Number.parseFloat(target.value);
+      if (!Number.isFinite(value)) {
+        return;
+      }
+      const normalized = Math.max(0, Math.min(100, value)) / 100;
+      this.fxIntensity = normalized;
+      if (this.fxSliderValue) {
+        this.fxSliderValue.textContent = `${Math.round(normalized * 100)}%`;
+      }
+      if (this.fxIntensityHandler) {
+        this.fxIntensityHandler(normalized);
+      }
+    });
+    fxSliderContainer.appendChild(this.fxSlider);
+
+    this.fxSliderValue = document.createElement("span");
+    this.fxSliderValue.textContent = `${Math.round(this.fxIntensity * 100)}%`;
+    this.fxSliderValue.style.fontSize = "11px";
+    this.fxSliderValue.style.opacity = "0.7";
+    fxSliderContainer.appendChild(this.fxSliderValue);
+
+    topLeft.appendChild(fxSliderContainer);
+
     this.abilityBar = document.createElement("div");
     this.abilityBar.style.position = "absolute";
     this.abilityBar.style.bottom = "16px";
@@ -313,6 +389,41 @@ class HudUIImpl {
     this.spawnHandler = cb;
   }
 
+  onClickVisualPreset(cb: (() => void) | null): void {
+    this.visualPresetHandler = cb;
+  }
+
+  onFxIntensityChanged(cb: ((value: number) => void) | null): void {
+    this.fxIntensityHandler = cb;
+  }
+
+  setVisualPresetLabel(name: string): void {
+    if (typeof name === "string" && name.length > 0) {
+      this.visualPresetName = name;
+    }
+
+    if (this.visualPresetButton) {
+      this.visualPresetButton.textContent = this.formatPresetLabel(this.visualPresetName);
+    }
+  }
+
+  setFxIntensity(value: number): void {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    const clamped = Math.max(0, Math.min(1, value));
+    this.fxIntensity = clamped;
+
+    if (this.fxSlider) {
+      this.fxSlider.value = Math.round(clamped * 100).toString();
+    }
+
+    if (this.fxSliderValue) {
+      this.fxSliderValue.textContent = `${Math.round(clamped * 100)}%`;
+    }
+  }
+
   getInvincibilityState(): boolean {
     return this.invincibilityCheckbox?.checked ?? false;
   }
@@ -334,6 +445,11 @@ class HudUIImpl {
     this.skill2Slot = null;
     this.enterPrompt = null;
     this.deathBanner = null;
+    this.spawnButton = null;
+    this.invincibilityCheckbox = null;
+    this.visualPresetButton = null;
+    this.fxSlider = null;
+    this.fxSliderValue = null;
     this.init();
   }
 
@@ -452,6 +568,17 @@ class HudUIImpl {
       return;
     }
     slot.style.opacity = ready ? "1" : "0.4";
+  }
+
+  private formatPresetLabel(name: string): string {
+    if (!name) {
+      return "FX: (unknown)";
+    }
+    const formatted = name
+      .split(/[\s_-]+/)
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(" ");
+    return `FX: ${formatted}`;
   }
 }
 
