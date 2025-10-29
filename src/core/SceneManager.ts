@@ -1,7 +1,9 @@
 import type { Engine } from "babylonjs";
 import { DungeonScene } from "../scenes/DungeonScene";
+import { EditorScene } from "../scenes/EditorScene";
 import { HideoutScene } from "../scenes/HideoutScene";
 import type { SceneBase } from "../scenes/SceneBase";
+import { DEBUG_EDITOR } from "./DebugFlags";
 
 /**
  * Central coordinator for high-level scene transitions.
@@ -10,9 +12,31 @@ export class SceneManager {
   private readonly engine: Engine;
   private activeScene: SceneBase | null = null;
   private transitionPromise: Promise<void> | null = null;
+  private readonly debugKeyHandler: ((event: KeyboardEvent) => void) | null = null;
 
   constructor(engine: Engine) {
     this.engine = engine;
+
+    if (DEBUG_EDITOR && typeof window !== "undefined") {
+      this.debugKeyHandler = (event: KeyboardEvent) => {
+        if (event.repeat) {
+          return;
+        }
+
+        if (event.code === "F6" && this.activeScene instanceof HideoutScene) {
+          event.preventDefault();
+          void this.goToEditor();
+          return;
+        }
+
+        if (event.code === "F5" && this.activeScene instanceof EditorScene) {
+          event.preventDefault();
+          void this.goToHideout();
+        }
+      };
+
+      window.addEventListener("keydown", this.debugKeyHandler, { capture: true });
+    }
   }
 
   /**
@@ -27,6 +51,13 @@ export class SceneManager {
    */
   async goToDungeon(): Promise<void> {
     await this.transitionTo(() => new DungeonScene(this));
+  }
+
+  /**
+   * Transition into the development editor scene.
+   */
+  async goToEditor(): Promise<void> {
+    await this.transitionTo(() => new EditorScene(this));
   }
 
   /**
