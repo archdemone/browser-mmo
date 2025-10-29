@@ -12,6 +12,7 @@ import {
   Texture,
   Vector3,
   Scalar,
+  PBRMaterial,
 } from "babylonjs";
 import { Input } from "../core/Input";
 import type { SceneBase } from "./SceneBase";
@@ -22,6 +23,7 @@ import { HudUI, type HudState } from "../ui/HudUI";
 import { SaveService } from "../state/SaveService";
 import { Enemy } from "../gameplay/Enemy";
 import { PostFXConfig } from "../visuals/PostFXConfig";
+import { MaterialLibrary } from "../visuals/MaterialLibrary";
 
 interface OccluderController {
   mesh: Mesh;
@@ -38,8 +40,8 @@ interface SpawnArea {
 }
 
 interface HideoutMaterials {
-  floor: StandardMaterial;
-  floorBroken: StandardMaterial;
+  floor: PBRMaterial;
+  floorBroken: PBRMaterial;
   wall: StandardMaterial;
   railing: StandardMaterial;
   pillar: StandardMaterial;
@@ -405,7 +407,7 @@ export class HideoutScene implements SceneBase {
     const tileThickness = 0.32;
     const tileCounter: TileCounter = { value: 0 };
 
-    const materials = this.createMaterials(scene);
+    const materials = await this.createMaterials(scene);
     const platform = this.buildPlatform(scene, materials, tileSize, tileThickness, tileCounter);
     const ramp = this.buildRamp(scene, materials, platform, tileSize, tileThickness, tileCounter);
     const lowerArena = this.buildLowerArena(scene, materials, tileSize, tileThickness, ramp, tileCounter);
@@ -414,15 +416,10 @@ export class HideoutScene implements SceneBase {
     this.setupArenaLighting(scene, lowerArena, tileSize);
   }
 
-  private createMaterials(scene: Scene): HideoutMaterials {
-    const floorMaterial = new StandardMaterial("hideout.floorTile", scene);
-    floorMaterial.diffuseColor = new Color3(0.2, 0.2, 0.26);
-    floorMaterial.specularColor = new Color3(0.05, 0.05, 0.06);
-
-    const brokenFloorMaterial = new StandardMaterial("hideout.floorTileBroken", scene);
-    brokenFloorMaterial.diffuseColor = new Color3(0.18, 0.18, 0.22);
-    brokenFloorMaterial.specularColor = new Color3(0.04, 0.04, 0.05);
-    brokenFloorMaterial.emissiveColor = new Color3(0.025, 0.012, 0.012);
+  private async createMaterials(scene: Scene): Promise<HideoutMaterials> {
+    const stoneSet = await MaterialLibrary.buildStoneFloorMaterials(scene);
+    const floorMaterial = stoneSet.base;
+    const brokenFloorMaterial = stoneSet.broken;
 
     const wallMaterial = new StandardMaterial("hideout.balconyWall", scene);
     wallMaterial.diffuseColor = new Color3(0.11, 0.11, 0.14);

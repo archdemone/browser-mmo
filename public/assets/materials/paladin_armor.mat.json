@@ -1,0 +1,23 @@
+{
+  "definitions": [
+    {
+      "key": "helmetMetal",
+      "meshNames": ["Paladin_J_Nordstrom_Helmet"],
+      "albedoTint": [0.6, 0.62, 0.66],
+      "metallic": 0.9,
+      "roughness": 0.32
+    },
+    {
+      "key": "bodyArmor",
+      "meshNames": ["Paladin_J_Nordstrom"],
+      "albedoTint": [0.94, 0.92, 0.9],
+      "metallic": 0.05,
+      "roughness": 0.82,
+      "maskTexture": "/assets/textures/paladin_metal_mask.png",
+      "maskMetalChannel": "b",
+      "maskRoughnessChannel": "g",
+      "maskIntensity": 0.95
+    }
+  ],
+  "notes": "Edit tint/metal/roughness per entry to rebalance the paladin look. The mask texture stores metal in blue and roughness in green so we can make the plates gleam without touching code."
+}

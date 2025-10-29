@@ -12,6 +12,7 @@ import {
 import type { ISceneLoaderAsyncResult } from "babylonjs";
 import "babylonjs-loaders";
 import { PlayerAnimator } from "./PlayerAnimator";
+import { MaterialLibrary } from "./MaterialLibrary";
 
 interface CharacterCreationResult {
   rootMesh: TransformNode;
@@ -67,7 +68,9 @@ const ENEMY_LOAD_OPTIONS: CharacterLoadOptions = {
  * Loads the player character mesh and associated animations into the provided scene.
  */
 export async function createPlayerCharacter(scene: Scene): Promise<CharacterCreationResult> {
-  return loadCharacter(scene, PLAYER_LOAD_OPTIONS);
+  const result = await loadCharacter(scene, PLAYER_LOAD_OPTIONS);
+  await MaterialLibrary.applyPaladinMaterials(scene, result.rootMesh);
+  return result;
 }
 
 /**

@@ -1,0 +1,16 @@
+{
+  "materialName": "hideout.stoneFloor",
+  "albedoTexture": "/assets/textures/stone_floor_basecolor.png",
+  "normalTexture": "/assets/textures/stone_floor_normal.png",
+  "roughnessTexture": "/assets/textures/stone_floor_roughness.png",
+  "albedoTint": [0.22, 0.22, 0.26],
+  "metallic": 0.02,
+  "roughness": 0.92,
+  "uvScale": 1.4,
+  "uvOffset": [0, 0],
+  "brokenVariant": {
+    "albedoTint": [0.18, 0.18, 0.22],
+    "emissiveTint": [0.025, 0.012, 0.012]
+  },
+  "notes": "Swap the PNGs in /assets/textures to iterate on the stone look later."
+}
