@@ -47,6 +47,7 @@ class HudUIImpl {
   private visualPresetButton: HTMLButtonElement | null = null;
   private visualPresetName: string = "gameplay";
   private fxSlider: HTMLInputElement | null = null;
+  private fxSliderValue: HTMLSpanElement | null = null;
   private fxIntensityHandler: ((value: number) => void) | null = null;
   private fxIntensity: number = 1;
   private visualControlPanel: HTMLDivElement | null = null;
@@ -55,9 +56,6 @@ class HudUIImpl {
   private visualControlValues: Map<string, HTMLSpanElement> = new Map();
   private visualControlDefinitions: Map<string, VisualControlDefinition> = new Map();
   private visualControlChangeHandler: ((id: VisualControlId, value: number) => void) | null = null;
-  private fxSliderValue: HTMLSpanElement | null = null;
-  private fxIntensityHandler: ((value: number) => void) | null = null;
-  private fxIntensity: number = 1;
 
   init(): void {
     if (typeof document === "undefined") {

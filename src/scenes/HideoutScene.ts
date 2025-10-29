@@ -28,7 +28,6 @@ import {
   type LightPresetConfig,
   type VisualControlId,
 } from "../visuals/VisualPresetManager";
-import { VisualPresetManager, type LightPresetConfig } from "../visuals/VisualPresetManager";
 import { EffectsFactory } from "../visuals/EffectsFactory";
 import { MaterialLibrary } from "../visuals/MaterialLibrary";
 
@@ -1094,8 +1093,6 @@ export class HideoutScene implements SceneBase {
     const scale = Math.max(0, Math.min(1, intensityScale));
     const defaults = this.lightingDefaults;
     const overrides = VisualPresetManager.getLightOverrides();
-    const defaults = this.lightingDefaults;
-    const scale = Math.max(0, Math.min(1, intensityScale));
 
     const resolve = (value: number | undefined, fallback: number, label: string): number => {
       if (value === undefined) {
@@ -1122,11 +1119,6 @@ export class HideoutScene implements SceneBase {
     const coolIntensity = overrides.coolFillIntensity ?? coolIntensityBase * scale;
     const coolRange = overrides.coolFillRange ?? coolRangeBase * scale;
     const hemiIntensity = overrides.hemiIntensity ?? hemiIntensityBase * scale;
-    const warmIntensity = warmIntensityBase * scale;
-    const warmRange = warmRangeBase * scale;
-    const coolIntensity = coolIntensityBase * scale;
-    const coolRange = coolRangeBase * scale;
-    const hemiIntensity = hemiIntensityBase * scale;
 
     for (const light of this.warmLights) {
       light.intensity = warmIntensity;
