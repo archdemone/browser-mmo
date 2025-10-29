@@ -40,8 +40,8 @@ interface SpawnArea {
 }
 
 interface HideoutMaterials {
-  floor: PBRMaterial;
-  floorBroken: PBRMaterial;
+  floor: StandardMaterial | PBRMaterial;
+  floorBroken: StandardMaterial | PBRMaterial;
   wall: StandardMaterial;
   railing: StandardMaterial;
   pillar: StandardMaterial;
@@ -239,8 +239,8 @@ export class HideoutScene implements SceneBase {
   async load(engine: Engine): Promise<void> {
     this.scene = new Scene(engine);
 
-    // Slightly higher ambient so silhouettes aren't totally lost.
-    this.scene.ambientColor = new Color3(0.06, 0.07, 0.09); // was ~0.035
+    // Higher ambient for better visibility while maintaining dark ARPG theme.
+    this.scene.ambientColor = new Color3(0.12, 0.14, 0.16); // increased from (0.06, 0.07, 0.09)
     this.scene.clearColor = new Color4(0.02, 0.02, 0.03, 1);
 
     // Global cool fill. This should gently light walls / ramps / player even outside torch pools.
@@ -249,7 +249,7 @@ export class HideoutScene implements SceneBase {
       new Vector3(0, 1, 0),
       this.scene
     );
-    hemi.intensity = 0.55; // was 0.34
+    hemi.intensity = 0.65; // increased from 0.55 for better overall illumination
     hemi.diffuse = new Color3(0.32, 0.45, 0.62);     // a bit brighter, bluish fill
     hemi.groundColor = new Color3(0.18, 0.22, 0.30); // subtle bounce
     hemi.specular = Color3.Black(); // still matte, no shiny plastic look
@@ -417,9 +417,23 @@ export class HideoutScene implements SceneBase {
   }
 
   private async createMaterials(scene: Scene): Promise<HideoutMaterials> {
-    const stoneSet = await MaterialLibrary.buildStoneFloorMaterials(scene);
-    const floorMaterial = stoneSet.base;
-    const brokenFloorMaterial = stoneSet.broken;
+    let floorMaterial: StandardMaterial | PBRMaterial;
+    let brokenFloorMaterial: StandardMaterial | PBRMaterial;
+
+    try {
+      const stoneSet = await MaterialLibrary.buildStoneFloorMaterials(scene);
+      floorMaterial = stoneSet.base;
+      brokenFloorMaterial = stoneSet.broken;
+    } catch (error) {
+      console.warn("[MaterialLibrary] Failed to load PBR materials, falling back to StandardMaterial", error);
+      // Fallback to StandardMaterial
+      floorMaterial = new StandardMaterial("hideout.floorTile", scene);
+      floorMaterial.diffuseColor = new Color3(0.2, 0.2, 0.26);
+
+      brokenFloorMaterial = new StandardMaterial("hideout.floorTileBroken", scene);
+      brokenFloorMaterial.diffuseColor = new Color3(0.18, 0.18, 0.22);
+      brokenFloorMaterial.emissiveColor = new Color3(0.025, 0.012, 0.012);
+    }
 
     const wallMaterial = new StandardMaterial("hideout.balconyWall", scene);
     wallMaterial.diffuseColor = new Color3(0.11, 0.11, 0.14);
@@ -926,6 +940,25 @@ export class HideoutScene implements SceneBase {
     fillLight.intensity = 0.7;                          // was 0.42
     fillLight.range     = Math.max(layout.width, layout.depth) * 1.3; // was 0.95
     fillLight.falloffType = PointLight.FALLOFF_PHYSICAL;
+
+    // Add lighting for the upper platform area to reduce darkness
+    const platformLightPositions = [
+      new Vector3(-tileSize * 1.5, 2.5, -8),  // left side of platform
+      new Vector3(tileSize * 1.5, 2.5, -12),  // right side, back of platform
+    ];
+
+    platformLightPositions.forEach((position, index) => {
+      const platformLight = new PointLight(
+        `hideout.platformLight.${index}`,
+        position,
+        scene
+      );
+      platformLight.diffuse = new Color3(0.4, 0.5, 0.7);   // cool blue platform lighting
+      platformLight.specular = new Color3(0.25, 0.35, 0.5);
+      platformLight.intensity = 0.6;                        // moderate intensity
+      platformLight.range = 8.0;                            // wider range for platform coverage
+      platformLight.falloffType = PointLight.FALLOFF_PHYSICAL;
+    });
   }
 
   private placeDungeonDevice(scene: Scene, materials: HideoutMaterials, platform: PlatformLayout): void {
