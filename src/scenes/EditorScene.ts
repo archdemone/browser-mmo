@@ -437,13 +437,6 @@ export class EditorScene implements SceneBase {
 
   private registerEventListeners(): void {
     this.keyDownHandler = (event: KeyboardEvent) => {
-      if (this.handleEditorShortcuts(event)) {
-        event.preventDefault();
-        return;
-      }
-
-  private registerEventListeners(): void {
-    this.keyDownHandler = (event: KeyboardEvent) => {
       if (this.handleZoomKeys(event, true)) {
         event.preventDefault();
         return;
