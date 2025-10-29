@@ -52,9 +52,147 @@ const createDefaultSettings = (): PostFXSettings => ({
   fxaaEnabled: false,
 });
 
+export interface PostFXPresetConfig {
+  bloomEnabled?: boolean;
+  bloomWeight?: number;
+  bloomThreshold?: number;
+  bloomKernel?: number;
+  vignetteWeight?: number;
+  vignetteColor?: [number, number, number] | { r: number; g: number; b: number };
+  vignetteBlendMode?: number | "multiply" | "opaque";
+  exposure?: number;
+  contrast?: number;
+  saturation?: number;
+  globalSaturation?: number;
+  shadowsHue?: number;
+  shadowsDensity?: number;
+  shadowsSaturation?: number;
+  shadowsValue?: number;
+  highlightsHue?: number;
+  highlightsDensity?: number;
+  highlightsSaturation?: number;
+  highlightsValue?: number;
+  fxaaEnabled?: boolean;
+}
+
 export class PostFXConfig {
   private static pipeline: DefaultRenderingPipeline | null = null;
   static settings: PostFXSettings = createDefaultSettings();
+
+  static getDefaultSettings(): PostFXSettings {
+    return createDefaultSettings();
+  }
+
+  static applyPreset(preset?: PostFXPresetConfig | null): void {
+    const defaults = createDefaultSettings();
+    if (!preset || typeof preset !== "object") {
+      PostFXConfig.settings = defaults;
+      return;
+    }
+
+    const settings = { ...defaults };
+
+    const assignNumber = <K extends keyof PostFXSettings>(
+      key: K,
+      value: unknown
+    ) => {
+      if (value === undefined) {
+        return;
+      }
+      if (typeof value === "number" && Number.isFinite(value)) {
+        settings[key] = value as PostFXSettings[K];
+      } else {
+        console.warn(
+          `[PostFXConfig] Invalid numeric value for ${String(key)} in preset. Received:`,
+          value
+        );
+      }
+    };
+
+    const assignBoolean = <K extends keyof PostFXSettings>(
+      key: K,
+      value: unknown
+    ) => {
+      if (value === undefined) {
+        return;
+      }
+      if (typeof value === "boolean") {
+        settings[key] = value as PostFXSettings[K];
+      } else {
+        console.warn(
+          `[PostFXConfig] Invalid boolean value for ${String(key)} in preset. Received:`,
+          value
+        );
+      }
+    };
+
+    assignBoolean("bloomEnabled", preset.bloomEnabled);
+    assignNumber("bloomWeight", preset.bloomWeight);
+    assignNumber("bloomThreshold", preset.bloomThreshold);
+    assignNumber("bloomKernel", preset.bloomKernel);
+    assignNumber("vignetteWeight", preset.vignetteWeight);
+    assignNumber("exposure", preset.exposure);
+    assignNumber("contrast", preset.contrast);
+    assignNumber("saturation", preset.saturation);
+    assignNumber("globalSaturation", preset.globalSaturation);
+    assignNumber("shadowsHue", preset.shadowsHue);
+    assignNumber("shadowsDensity", preset.shadowsDensity);
+    assignNumber("shadowsSaturation", preset.shadowsSaturation);
+    assignNumber("shadowsValue", preset.shadowsValue);
+    assignNumber("highlightsHue", preset.highlightsHue);
+    assignNumber("highlightsDensity", preset.highlightsDensity);
+    assignNumber("highlightsSaturation", preset.highlightsSaturation);
+    assignNumber("highlightsValue", preset.highlightsValue);
+    assignBoolean("fxaaEnabled", preset.fxaaEnabled);
+
+    if (preset.vignetteColor !== undefined) {
+      const color = preset.vignetteColor;
+      if (Array.isArray(color) && color.length === 3) {
+        const [r, g, b] = color;
+        if ([r, g, b].every((component) => typeof component === "number")) {
+          settings.vignetteColor = new Color3(r, g, b);
+        } else {
+          console.warn("[PostFXConfig] Vignette color array must contain numbers.", color);
+        }
+      } else if (
+        typeof color === "object" &&
+        color !== null &&
+        "r" in color &&
+        "g" in color &&
+        "b" in color
+      ) {
+        const r = (color as { r: unknown }).r;
+        const g = (color as { g: unknown }).g;
+        const b = (color as { b: unknown }).b;
+        if ([r, g, b].every((component) => typeof component === "number")) {
+          settings.vignetteColor = new Color3(r as number, g as number, b as number);
+        } else {
+          console.warn("[PostFXConfig] Vignette color object must contain numeric r/g/b.", color);
+        }
+      } else {
+        console.warn("[PostFXConfig] Unsupported vignette color value.", color);
+      }
+    }
+
+    if (preset.vignetteBlendMode !== undefined) {
+      const blend = preset.vignetteBlendMode;
+      if (typeof blend === "number") {
+        settings.vignetteBlendMode = blend;
+      } else if (typeof blend === "string") {
+        if (blend.toLowerCase() === "multiply") {
+          settings.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
+        } else if (blend.toLowerCase() === "opaque") {
+          settings.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_OPAQUE;
+        } else {
+          console.warn("[PostFXConfig] Unknown vignette blend mode string.", blend);
+        }
+      } else {
+        console.warn("[PostFXConfig] Unsupported vignette blend mode value.", blend);
+      }
+    }
+
+    PostFXConfig.settings = settings;
+  }
 
   static apply(scene: Scene): DefaultRenderingPipeline | null {
     const camera = scene.activeCamera;

@@ -7,6 +7,7 @@ export class Input {
   private attackQueued: boolean = false;
   private spawnEnemyQueued: boolean = false;
   private interactQueued: boolean = false;
+  private postFxToggleQueued: boolean = false;
   private readonly virtualMove: Set<"up" | "down" | "left" | "right"> = new Set();
   private virtualSprint: boolean = false;
   private debugAxisOverride: { x: number; z: number } | null = null;
@@ -33,6 +34,11 @@ export class Input {
 
       if (event.code === "KeyE" && !event.repeat) {
         this.interactQueued = true;
+      }
+
+      if (event.code === "KeyP" && !event.repeat) {
+        this.postFxToggleQueued = true;
+        event.preventDefault();
       }
     };
 
@@ -185,6 +191,14 @@ export class Input {
   consumeInteract(): boolean {
     if (this.interactQueued) {
       this.interactQueued = false;
+      return true;
+    }
+    return false;
+  }
+
+  consumePostFxToggle(): boolean {
+    if (this.postFxToggleQueued) {
+      this.postFxToggleQueued = false;
       return true;
     }
     return false;
