@@ -98,6 +98,30 @@ export interface PostFXPresetConfig {
   fxaaEnabled?: boolean;
 }
 
+export type PostFXOverrideId =
+  | "postfx.bloomEnabled"
+  | "postfx.bloomWeight"
+  | "postfx.bloomThreshold"
+  | "postfx.bloomKernel"
+  | "postfx.vignetteWeight"
+  | "postfx.vignetteColor.r"
+  | "postfx.vignetteColor.g"
+  | "postfx.vignetteColor.b"
+  | "postfx.vignetteBlendMode"
+  | "postfx.exposure"
+  | "postfx.contrast"
+  | "postfx.saturation"
+  | "postfx.globalSaturation"
+  | "postfx.shadowsHue"
+  | "postfx.shadowsDensity"
+  | "postfx.shadowsSaturation"
+  | "postfx.shadowsValue"
+  | "postfx.highlightsHue"
+  | "postfx.highlightsDensity"
+  | "postfx.highlightsSaturation"
+  | "postfx.highlightsValue"
+  | "postfx.fxaaEnabled";
+
 export class PostFXConfig {
   private static pipeline: DefaultRenderingPipeline | null = null;
   static settings: PostFXSettings = createDefaultSettings();
@@ -108,6 +132,9 @@ export class PostFXConfig {
 
   static applyPreset(
     preset?: PostFXPresetConfig | null,
+    intensityScale: number = 1,
+    overrides?: Partial<Record<PostFXOverrideId, number>>
+  ): void {
     intensityScale: number = 1
   ): void {
   static applyPreset(preset?: PostFXPresetConfig | null): void {
@@ -273,6 +300,84 @@ export class PostFXConfig {
       settings.highlightsValue
     );
     settings.fxaaEnabled = scale > 0 && settings.fxaaEnabled;
+
+    if (overrides) {
+      const readOverride = (id: PostFXOverrideId): number | undefined =>
+        overrides[id];
+
+      const applyBooleanOverride = (
+        id: PostFXOverrideId,
+        key: keyof PostFXSettings
+      ) => {
+        const value = readOverride(id);
+        if (value === undefined) {
+          return;
+        }
+        settings[key] = (value ?? 0) >= 0.5 as PostFXSettings[typeof key];
+      };
+
+      const applyNumberOverride = (
+        id: PostFXOverrideId,
+        key: keyof PostFXSettings,
+        options?: { clamp?: [number, number]; round?: boolean }
+      ) => {
+        const value = readOverride(id);
+        if (value === undefined) {
+          return;
+        }
+        let numeric = value;
+        if (options?.clamp) {
+          const [min, max] = options.clamp;
+          numeric = Math.max(min, Math.min(max, numeric));
+        }
+        if (options?.round) {
+          numeric = Math.round(numeric);
+        }
+        settings[key] = numeric as PostFXSettings[typeof key];
+      };
+
+      const applyColorOverride = (
+        component: "r" | "g" | "b",
+        id: PostFXOverrideId
+      ) => {
+        const value = readOverride(id);
+        if (value === undefined) {
+          return;
+        }
+        const clamped = Math.max(0, Math.min(1, value));
+        settings.vignetteColor[component] = clamped;
+      };
+
+      applyBooleanOverride("postfx.bloomEnabled", "bloomEnabled");
+      applyNumberOverride("postfx.bloomWeight", "bloomWeight");
+      applyNumberOverride("postfx.bloomThreshold", "bloomThreshold");
+      applyNumberOverride("postfx.bloomKernel", "bloomKernel", { round: true });
+      applyNumberOverride("postfx.vignetteWeight", "vignetteWeight");
+      applyColorOverride("r", "postfx.vignetteColor.r");
+      applyColorOverride("g", "postfx.vignetteColor.g");
+      applyColorOverride("b", "postfx.vignetteColor.b");
+
+      const blendOverride = readOverride("postfx.vignetteBlendMode");
+      if (blendOverride !== undefined) {
+        settings.vignetteBlendMode = blendOverride >= 0.5
+          ? ImageProcessingConfiguration.VIGNETTEMODE_OPAQUE
+          : ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
+      }
+
+      applyNumberOverride("postfx.exposure", "exposure");
+      applyNumberOverride("postfx.contrast", "contrast");
+      applyNumberOverride("postfx.saturation", "saturation");
+      applyNumberOverride("postfx.globalSaturation", "globalSaturation");
+      applyNumberOverride("postfx.shadowsHue", "shadowsHue");
+      applyNumberOverride("postfx.shadowsDensity", "shadowsDensity");
+      applyNumberOverride("postfx.shadowsSaturation", "shadowsSaturation");
+      applyNumberOverride("postfx.shadowsValue", "shadowsValue");
+      applyNumberOverride("postfx.highlightsHue", "highlightsHue");
+      applyNumberOverride("postfx.highlightsDensity", "highlightsDensity");
+      applyNumberOverride("postfx.highlightsSaturation", "highlightsSaturation");
+      applyNumberOverride("postfx.highlightsValue", "highlightsValue");
+      applyBooleanOverride("postfx.fxaaEnabled", "fxaaEnabled");
+    }
 
     PostFXConfig.settings = settings;
   }

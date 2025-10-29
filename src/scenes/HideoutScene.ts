@@ -23,6 +23,11 @@ import { HudUI, type HudState } from "../ui/HudUI";
 import { SaveService } from "../state/SaveService";
 import { Enemy } from "../gameplay/Enemy";
 import { PostFXConfig } from "../visuals/PostFXConfig";
+import {
+  VisualPresetManager,
+  type LightPresetConfig,
+  type VisualControlId,
+} from "../visuals/VisualPresetManager";
 import { VisualPresetManager, type LightPresetConfig } from "../visuals/VisualPresetManager";
 import { EffectsFactory } from "../visuals/EffectsFactory";
 import { MaterialLibrary } from "../visuals/MaterialLibrary";
@@ -306,6 +311,11 @@ export class HideoutScene implements SceneBase {
     HudUI.onFxIntensityChanged((value) => {
       this.updateFxIntensity(value);
     });
+    HudUI.onVisualControlChanged((id, value) => {
+      this.handleVisualControlChange(id, value);
+    });
+    HudUI.setVisualControls(VisualPresetManager.getVisualControlDefinitions());
+    this.syncVisualControlValues();
 
     console.log("[QA] Hideout loaded");
   }
@@ -1017,12 +1027,18 @@ export class HideoutScene implements SceneBase {
 
     const preset = VisualPresetManager.getActivePreset();
     const intensityScale = VisualPresetManager.getEffectIntensity();
+    PostFXConfig.applyPreset(
+      preset.postfx ?? undefined,
+      intensityScale,
+      VisualPresetManager.getPostFXOverrides()
+    );
     PostFXConfig.applyPreset(preset.postfx ?? undefined, intensityScale);
     PostFXConfig.apply(scene);
     this.applyLightPreset(preset.lights ?? undefined, intensityScale);
     EffectsFactory.setGlobalIntensity(intensityScale);
     HudUI.setVisualPresetLabel(VisualPresetManager.getActivePresetName());
     HudUI.setFxIntensity(intensityScale);
+    this.syncVisualControlValues();
   }
 
   private cycleVisualPreset(source: string): void {
@@ -1042,10 +1058,42 @@ export class HideoutScene implements SceneBase {
     this.applyCurrentVisualPreset();
   }
 
+  private handleVisualControlChange(id: VisualControlId, value: number): void {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    if (id === "effects.intensity") {
+      // Already routed through the dedicated FX intensity callback.
+      return;
+    }
+
+    const applied = VisualPresetManager.setControlValue(id, value);
+    if (!applied) {
+      console.warn("[HideoutScene] Received unknown visual control id", id, value);
+      return;
+    }
+
+    this.applyCurrentVisualPreset();
+  }
+
+  private syncVisualControlValues(): void {
+    const definitions = VisualPresetManager.getVisualControlDefinitions();
+    for (const definition of definitions) {
+      const current = VisualPresetManager.getControlValue(definition.id);
+      if (current !== undefined) {
+        HudUI.updateVisualControlValue(definition.id, current);
+      }
+    }
+  }
+
   private applyLightPreset(
     preset?: LightPresetConfig | null,
     intensityScale: number = 1
   ): void {
+    const scale = Math.max(0, Math.min(1, intensityScale));
+    const defaults = this.lightingDefaults;
+    const overrides = VisualPresetManager.getLightOverrides();
     const defaults = this.lightingDefaults;
     const scale = Math.max(0, Math.min(1, intensityScale));
 
@@ -1069,6 +1117,11 @@ export class HideoutScene implements SceneBase {
     const coolRangeBase = resolve(preset?.coolFillRange ?? undefined, defaults.coolFillRange, "coolFillRange");
     const hemiIntensityBase = resolve(preset?.hemiIntensity ?? undefined, defaults.hemiIntensity, "hemiIntensity");
 
+    const warmIntensity = overrides.warmLightIntensity ?? warmIntensityBase * scale;
+    const warmRange = overrides.warmLightRange ?? warmRangeBase * scale;
+    const coolIntensity = overrides.coolFillIntensity ?? coolIntensityBase * scale;
+    const coolRange = overrides.coolFillRange ?? coolRangeBase * scale;
+    const hemiIntensity = overrides.hemiIntensity ?? hemiIntensityBase * scale;
     const warmIntensity = warmIntensityBase * scale;
     const warmRange = warmRangeBase * scale;
     const coolIntensity = coolIntensityBase * scale;
@@ -1088,6 +1141,14 @@ export class HideoutScene implements SceneBase {
     if (this.hemiLight) {
       this.hemiLight.intensity = hemiIntensity;
     }
+
+    VisualPresetManager.updateCurrentLightState({
+      warmLightIntensity: warmIntensity,
+      warmLightRange: warmRange,
+      coolFillIntensity: coolIntensity,
+      coolFillRange: coolRange,
+      hemiIntensity,
+    });
   }
 
   private placeDungeonDevice(scene: Scene, materials: HideoutMaterials, platform: PlatformLayout): void {

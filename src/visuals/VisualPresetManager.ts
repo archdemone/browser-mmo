@@ -1,3 +1,9 @@
+import { ImageProcessingConfiguration } from "babylonjs";
+import {
+  PostFXConfig,
+  PostFXOverrideId,
+  PostFXPresetConfig,
+} from "./PostFXConfig";
 import { PostFXConfig, PostFXPresetConfig } from "./PostFXConfig";
 
 export interface LightPresetConfig {
@@ -14,6 +20,24 @@ export interface VisualPresetDefinition {
 }
 
 type PresetRecord = Record<string, VisualPresetDefinition>;
+
+type LightControlKey = keyof LightPresetConfig;
+
+export type VisualControlId =
+  | PostFXOverrideId
+  | `lights.${LightControlKey}`
+  | "effects.intensity";
+
+export type VisualControlGroup = "PostFX" | "Lighting" | "Effects";
+
+export interface VisualControlDefinition {
+  id: VisualControlId;
+  label: string;
+  min: number;
+  max: number;
+  step?: number;
+  group: VisualControlGroup;
+}
 
 const DEFAULT_PRESETS: PresetRecord = {
   gameplay: {
@@ -80,10 +104,65 @@ const DEFAULT_PRESETS: PresetRecord = {
   },
 };
 
+const DEFAULT_LIGHT_STATE: LightPresetConfig = {
+  warmLightIntensity: DEFAULT_PRESETS.gameplay.lights?.warmLightIntensity ?? 0.8,
+  warmLightRange: DEFAULT_PRESETS.gameplay.lights?.warmLightRange ?? 6,
+  coolFillIntensity: DEFAULT_PRESETS.gameplay.lights?.coolFillIntensity ?? 0.7,
+  coolFillRange: DEFAULT_PRESETS.gameplay.lights?.coolFillRange ?? 22,
+  hemiIntensity: DEFAULT_PRESETS.gameplay.lights?.hemiIntensity ?? 0.55,
+};
+
 const VISUAL_PRESET_PATH = "/assets/visual/postfx_presets.json";
 
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
+
+const POSTFX_CONTROL_DEFINITIONS: VisualControlDefinition[] = [
+  { id: "postfx.bloomEnabled", label: "Bloom Enabled", min: 0, max: 1, step: 1, group: "PostFX" },
+  { id: "postfx.bloomWeight", label: "Bloom Weight", min: 0, max: 1.5, step: 0.01, group: "PostFX" },
+  { id: "postfx.bloomThreshold", label: "Bloom Threshold", min: 0, max: 1, step: 0.01, group: "PostFX" },
+  { id: "postfx.bloomKernel", label: "Bloom Kernel", min: 0, max: 128, step: 1, group: "PostFX" },
+  { id: "postfx.vignetteWeight", label: "Vignette Weight", min: 0, max: 1, step: 0.01, group: "PostFX" },
+  { id: "postfx.vignetteColor.r", label: "Vignette Red", min: 0, max: 1, step: 0.01, group: "PostFX" },
+  { id: "postfx.vignetteColor.g", label: "Vignette Green", min: 0, max: 1, step: 0.01, group: "PostFX" },
+  { id: "postfx.vignetteColor.b", label: "Vignette Blue", min: 0, max: 1, step: 0.01, group: "PostFX" },
+  { id: "postfx.vignetteBlendMode", label: "Vignette Blend Mode", min: 0, max: 1, step: 1, group: "PostFX" },
+  { id: "postfx.exposure", label: "Exposure", min: 0.2, max: 1.5, step: 0.01, group: "PostFX" },
+  { id: "postfx.contrast", label: "Contrast", min: 0.5, max: 1.5, step: 0.01, group: "PostFX" },
+  { id: "postfx.saturation", label: "Saturation", min: 0, max: 1.5, step: 0.01, group: "PostFX" },
+  { id: "postfx.globalSaturation", label: "Global Saturation", min: -50, max: 50, step: 1, group: "PostFX" },
+  { id: "postfx.shadowsHue", label: "Shadows Hue", min: 0, max: 360, step: 1, group: "PostFX" },
+  { id: "postfx.shadowsDensity", label: "Shadows Density", min: 0, max: 100, step: 1, group: "PostFX" },
+  { id: "postfx.shadowsSaturation", label: "Shadows Saturation", min: -100, max: 100, step: 1, group: "PostFX" },
+  { id: "postfx.shadowsValue", label: "Shadows Value", min: -50, max: 50, step: 1, group: "PostFX" },
+  { id: "postfx.highlightsHue", label: "Highlights Hue", min: 0, max: 360, step: 1, group: "PostFX" },
+  { id: "postfx.highlightsDensity", label: "Highlights Density", min: 0, max: 100, step: 1, group: "PostFX" },
+  { id: "postfx.highlightsSaturation", label: "Highlights Saturation", min: -100, max: 100, step: 1, group: "PostFX" },
+  { id: "postfx.highlightsValue", label: "Highlights Value", min: -50, max: 50, step: 1, group: "PostFX" },
+  { id: "postfx.fxaaEnabled", label: "FXAA Enabled", min: 0, max: 1, step: 1, group: "PostFX" },
+];
+
+const LIGHT_CONTROL_DEFINITIONS: VisualControlDefinition[] = [
+  { id: "lights.warmLightIntensity", label: "Warm Intensity", min: 0, max: 2, step: 0.01, group: "Lighting" },
+  { id: "lights.warmLightRange", label: "Warm Range", min: 0, max: 20, step: 0.1, group: "Lighting" },
+  { id: "lights.coolFillIntensity", label: "Cool Fill Intensity", min: 0, max: 2, step: 0.01, group: "Lighting" },
+  { id: "lights.coolFillRange", label: "Cool Fill Range", min: 0, max: 40, step: 0.1, group: "Lighting" },
+  { id: "lights.hemiIntensity", label: "Hemi Intensity", min: 0, max: 2, step: 0.01, group: "Lighting" },
+];
+
+const EFFECT_CONTROL_DEFINITIONS: VisualControlDefinition[] = [
+  { id: "effects.intensity", label: "FX Intensity", min: 0, max: 1, step: 0.01, group: "Effects" },
+];
+
+const ALL_CONTROL_DEFINITIONS: VisualControlDefinition[] = [
+  ...POSTFX_CONTROL_DEFINITIONS,
+  ...LIGHT_CONTROL_DEFINITIONS,
+  ...EFFECT_CONTROL_DEFINITIONS,
+];
+
+const CONTROL_DEFINITION_LOOKUP: Map<VisualControlId, VisualControlDefinition> = new Map(
+  ALL_CONTROL_DEFINITIONS.map((definition) => [definition.id, definition])
+);
 
 export class VisualPresetManager {
   private static presets: PresetRecord = { ...DEFAULT_PRESETS };
@@ -92,6 +171,11 @@ export class VisualPresetManager {
   private static loading: Promise<void> | null = null;
   private static initialized = false;
   private static effectIntensity = 1;
+  private static postfxOverrides: Partial<Record<PostFXOverrideId, number>> = {};
+  private static lightOverrides: Partial<Record<LightControlKey, number>> = {};
+  private static currentLightState: Partial<LightPresetConfig> = {
+    ...DEFAULT_LIGHT_STATE,
+  };
 
   static async initialize(): Promise<void> {
     if (VisualPresetManager.initialized) {
@@ -166,6 +250,163 @@ export class VisualPresetManager {
     const preset = VisualPresetManager.getActivePreset();
     PostFXConfig.applyPreset(
       preset.postfx ?? undefined,
+      VisualPresetManager.effectIntensity,
+      VisualPresetManager.getPostFXOverrides()
+    );
+  }
+
+  static getVisualControlDefinitions(): VisualControlDefinition[] {
+    return ALL_CONTROL_DEFINITIONS.map((definition) => ({ ...definition }));
+  }
+
+  static getControlDefinition(id: VisualControlId): VisualControlDefinition | undefined {
+    return CONTROL_DEFINITION_LOOKUP.get(id);
+  }
+
+  static getControlValue(id: VisualControlId): number | undefined {
+    if (id === "effects.intensity") {
+      return VisualPresetManager.effectIntensity;
+    }
+
+    if (id.startsWith("postfx.")) {
+      return VisualPresetManager.readPostFXControlValue(id as PostFXOverrideId);
+    }
+
+    if (id.startsWith("lights.")) {
+      const key = id.split(".")[1] as LightControlKey | undefined;
+      if (!key) {
+        return undefined;
+      }
+      const override = VisualPresetManager.lightOverrides[key];
+      if (override !== undefined) {
+        return override;
+      }
+      const state = VisualPresetManager.currentLightState[key];
+      return typeof state === "number" ? state : undefined;
+    }
+
+    return undefined;
+  }
+
+  static setControlValue(id: VisualControlId, value: number): boolean {
+    if (!Number.isFinite(value)) {
+      console.warn("[VisualPresetManager] Ignoring non-finite control value for", id, value);
+      return false;
+    }
+
+    const definition = CONTROL_DEFINITION_LOOKUP.get(id);
+    const min = definition?.min ?? Number.NEGATIVE_INFINITY;
+    const max = definition?.max ?? Number.POSITIVE_INFINITY;
+    let clamped = Math.max(min, Math.min(max, value));
+    if (
+      definition?.step !== undefined &&
+      definition.step >= 1 &&
+      definition.max <= 1 &&
+      definition.min >= 0
+    ) {
+      clamped = clamped >= 0.5 ? 1 : 0;
+    } else if (definition?.step !== undefined && definition.step >= 1 && definition.max > 1) {
+      clamped = Math.round(clamped);
+    }
+
+    if (id === "effects.intensity") {
+      VisualPresetManager.setEffectIntensity(clamped);
+      return true;
+    }
+
+    if (id.startsWith("postfx.")) {
+      VisualPresetManager.postfxOverrides[id as PostFXOverrideId] = clamped;
+      return true;
+    }
+
+    if (id.startsWith("lights.")) {
+      const key = id.split(".")[1] as LightControlKey | undefined;
+      if (!key) {
+        return false;
+      }
+      VisualPresetManager.lightOverrides[key] = clamped;
+      return true;
+    }
+
+    return false;
+  }
+
+  static clearOverrides(): void {
+    VisualPresetManager.postfxOverrides = {};
+    VisualPresetManager.lightOverrides = {};
+  }
+
+  static getPostFXOverrides(): Partial<Record<PostFXOverrideId, number>> {
+    return { ...VisualPresetManager.postfxOverrides };
+  }
+
+  static getLightOverrides(): Partial<LightPresetConfig> {
+    const result: Partial<LightPresetConfig> = {};
+    for (const [key, value] of Object.entries(VisualPresetManager.lightOverrides)) {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        result[key as LightControlKey] = value;
+      }
+    }
+    return result;
+  }
+
+  static updateCurrentLightState(state: Partial<LightPresetConfig>): void {
+    VisualPresetManager.currentLightState = {
+      ...VisualPresetManager.currentLightState,
+      ...state,
+    };
+  }
+
+  private static readPostFXControlValue(id: PostFXOverrideId): number | undefined {
+    const settings = PostFXConfig.settings;
+    switch (id) {
+      case "postfx.bloomEnabled":
+        return settings.bloomEnabled ? 1 : 0;
+      case "postfx.bloomWeight":
+        return settings.bloomWeight;
+      case "postfx.bloomThreshold":
+        return settings.bloomThreshold;
+      case "postfx.bloomKernel":
+        return settings.bloomKernel;
+      case "postfx.vignetteWeight":
+        return settings.vignetteWeight;
+      case "postfx.vignetteColor.r":
+        return settings.vignetteColor.r;
+      case "postfx.vignetteColor.g":
+        return settings.vignetteColor.g;
+      case "postfx.vignetteColor.b":
+        return settings.vignetteColor.b;
+      case "postfx.vignetteBlendMode":
+        return settings.vignetteBlendMode === ImageProcessingConfiguration.VIGNETTEMODE_OPAQUE ? 1 : 0;
+      case "postfx.exposure":
+        return settings.exposure;
+      case "postfx.contrast":
+        return settings.contrast;
+      case "postfx.saturation":
+        return settings.saturation;
+      case "postfx.globalSaturation":
+        return settings.globalSaturation;
+      case "postfx.shadowsHue":
+        return settings.shadowsHue;
+      case "postfx.shadowsDensity":
+        return settings.shadowsDensity;
+      case "postfx.shadowsSaturation":
+        return settings.shadowsSaturation;
+      case "postfx.shadowsValue":
+        return settings.shadowsValue;
+      case "postfx.highlightsHue":
+        return settings.highlightsHue;
+      case "postfx.highlightsDensity":
+        return settings.highlightsDensity;
+      case "postfx.highlightsSaturation":
+        return settings.highlightsSaturation;
+      case "postfx.highlightsValue":
+        return settings.highlightsValue;
+      case "postfx.fxaaEnabled":
+        return settings.fxaaEnabled ? 1 : 0;
+      default:
+        return undefined;
+    }
       VisualPresetManager.effectIntensity
     );
     PostFXConfig.applyPreset(preset.postfx ?? undefined);
