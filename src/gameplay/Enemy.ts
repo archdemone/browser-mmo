@@ -191,13 +191,13 @@ export class Enemy {
               const mat = child.material;
               const baseMat = this.baseMaterial;
               if ('emissiveColor' in mat && 'emissiveColor' in baseMat && mat.emissiveColor && baseMat.emissiveColor) {
-                mat.emissiveColor.copyFrom(baseMat.emissiveColor);
+                (mat.emissiveColor as any).copyFrom(baseMat.emissiveColor);
               }
               if ('diffuseColor' in mat && 'diffuseColor' in baseMat && mat.diffuseColor && baseMat.diffuseColor) {
-                mat.diffuseColor.copyFrom(baseMat.diffuseColor);
+                (mat.diffuseColor as any).copyFrom(baseMat.diffuseColor);
               }
               if ('albedoColor' in mat && 'albedoColor' in baseMat && mat.albedoColor && baseMat.albedoColor) {
-                mat.albedoColor.copyFrom(baseMat.albedoColor);
+                (mat.albedoColor as any).copyFrom(baseMat.albedoColor);
               }
             }
           }
@@ -224,11 +224,11 @@ export class Enemy {
           // Try different material types
           const mat = child.material;
           if ('emissiveColor' in mat && mat.emissiveColor) {
-            mat.emissiveColor.set(0.8, 0, 0); // red flash
+            (mat.emissiveColor as any).set(0.8, 0, 0); // red flash
           } else if ('diffuseColor' in mat && mat.diffuseColor) {
-            mat.diffuseColor.set(1, 0.2, 0.2); // reddish tint
+            (mat.diffuseColor as any).set(1, 0.2, 0.2); // reddish tint
           } else if ('albedoColor' in mat && mat.albedoColor) {
-            mat.albedoColor.set(1, 0.2, 0.2); // PBR albedo tint
+            (mat.albedoColor as any).set(1, 0.2, 0.2); // PBR albedo tint
           }
         }
       }
@@ -301,10 +301,10 @@ export class Enemy {
         if (child.material) {
           // Clone the material to store original values
           try {
-            this.baseMaterial = child.material.clone(`${child.material.name || 'material'}_base`);
+            this.baseMaterial = child.material.clone(`${child.material.name || 'material'}_base`) as StandardMaterial;
           } catch (error) {
             // If cloning fails, create a simple copy of key properties
-            this.baseMaterial = child.material;
+            this.baseMaterial = child.material as StandardMaterial;
           }
           break;
         }

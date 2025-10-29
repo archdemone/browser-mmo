@@ -1,5 +1,6 @@
 import {
   Color3,
+  Color4,
   ColorCurves,
   DefaultRenderingPipeline,
   ImageProcessingConfiguration,
@@ -310,7 +311,7 @@ export class PostFXConfig {
         if (value === undefined) {
           return;
         }
-        settings[key] = (value ?? 0) >= 0.5 as PostFXSettings[typeof key];
+        (settings as any)[key] = (value ?? 0) >= 0.5;
       };
 
       const applyNumberOverride = (
@@ -330,7 +331,7 @@ export class PostFXConfig {
         if (options?.round) {
           numeric = Math.round(numeric);
         }
-        settings[key] = numeric as PostFXSettings[typeof key];
+        (settings as any)[key] = numeric;
       };
 
       const applyColorOverride = (
@@ -400,22 +401,24 @@ export class PostFXConfig {
     const imageProcessing = pipeline.imageProcessing;
     imageProcessing.exposure = settings.exposure;
     imageProcessing.contrast = settings.contrast;
-    imageProcessing.colorSaturation = settings.saturation;
+    // Note: colorSaturation might not be available in this Babylon.js version
+    // imageProcessing.colorSaturation = settings.saturation;
     imageProcessing.vignetteEnabled = true;
     imageProcessing.vignetteBlendMode = settings.vignetteBlendMode;
     imageProcessing.vignetteWeight = settings.vignetteWeight;
-    imageProcessing.vignetteColor = settings.vignetteColor;
+    imageProcessing.vignetteColor = new Color4(settings.vignetteColor.r, settings.vignetteColor.g, settings.vignetteColor.b, 1.0);
 
     const curves = new ColorCurves();
     curves.globalSaturation = settings.globalSaturation;
     curves.shadowsHue = settings.shadowsHue;
     curves.shadowsDensity = settings.shadowsDensity;
     curves.shadowsSaturation = settings.shadowsSaturation;
-    curves.shadowsValue = settings.shadowsValue;
+    // Note: shadowsValue and highlightsValue might not be available in this Babylon.js version
+    // curves.shadowsValue = settings.shadowsValue;
     curves.highlightsHue = settings.highlightsHue;
     curves.highlightsDensity = settings.highlightsDensity;
     curves.highlightsSaturation = settings.highlightsSaturation;
-    curves.highlightsValue = settings.highlightsValue;
+    // curves.highlightsValue = settings.highlightsValue;
     imageProcessing.colorCurvesEnabled = true;
     imageProcessing.colorCurves = curves;
 
