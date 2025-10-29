@@ -19,6 +19,12 @@ import {
   Scalar,
   StandardMaterial,
   Vector3,
+  MeshBuilder,
+  Scene,
+  StandardMaterial,
+  Vector3,
+  Scalar,
+  type LinesMesh,
 } from "babylonjs";
 import type { SceneManager } from "../core/SceneManager";
 import type { SceneBase } from "./SceneBase";
@@ -121,6 +127,7 @@ export class EditorScene implements SceneBase {
         event.preventDefault();
       };
       canvas.addEventListener("contextmenu", this.contextMenuHandler);
+      camera.attachControl(canvas, true);
     } else {
       console.warn("[EditorScene] rendering canvas missing during load");
     }
@@ -435,6 +442,8 @@ export class EditorScene implements SceneBase {
         return;
       }
 
+  private registerEventListeners(): void {
+    this.keyDownHandler = (event: KeyboardEvent) => {
       if (this.handleZoomKeys(event, true)) {
         event.preventDefault();
         return;
@@ -501,6 +510,7 @@ export class EditorScene implements SceneBase {
       this.scene.onPointerObservable.remove(this.pointerObserver);
       this.pointerObserver = null;
     }
+    window.removeEventListener("wheel", this.wheelHandler as EventListener);
   }
 
   private computeMoveVector(): Vector3 | null {
