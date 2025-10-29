@@ -236,14 +236,21 @@ export class HideoutScene implements SceneBase {
 
   async load(engine: Engine): Promise<void> {
     this.scene = new Scene(engine);
-    this.scene.ambientColor = new Color3(0.01, 0.01, 0.015);
+
+    // Slightly higher ambient so silhouettes aren't totally lost.
+    this.scene.ambientColor = new Color3(0.06, 0.07, 0.09); // was ~0.035
     this.scene.clearColor = new Color4(0.02, 0.02, 0.03, 1);
 
-    const hemi = new HemisphericLight("hideout.hemi", new Vector3(0, 1, 0), this.scene);
-    hemi.intensity = 0.25;
-    hemi.diffuse = new Color3(0.22, 0.3, 0.42);
-    hemi.groundColor = new Color3(0.08, 0.12, 0.18);
-    hemi.specular = Color3.Black();
+    // Global cool fill. This should gently light walls / ramps / player even outside torch pools.
+    const hemi = new HemisphericLight(
+      "hideout.hemi",
+      new Vector3(0, 1, 0),
+      this.scene
+    );
+    hemi.intensity = 0.55; // was 0.34
+    hemi.diffuse = new Color3(0.32, 0.45, 0.62);     // a bit brighter, bluish fill
+    hemi.groundColor = new Color3(0.18, 0.22, 0.30); // subtle bounce
+    hemi.specular = Color3.Black(); // still matte, no shiny plastic look
 
     this.input = new Input();
     await this.buildHideoutGeometry();
@@ -888,28 +895,39 @@ export class HideoutScene implements SceneBase {
   }
 
   private setupArenaLighting(scene: Scene, layout: LowerArenaLayout, tileSize: number): void {
-    const warmLightColor = new Color3(0.95, 0.58, 0.32);
-    const warmSpecular = new Color3(0.8, 0.44, 0.24);
+    const warmLightColor = new Color3(0.95, 0.58, 0.32);  // warm firelight
+    const warmSpecular   = new Color3(0.8, 0.44, 0.24);
+
     const warmLightPositions = [
       new Vector3(-tileSize * 1.4, 1.25, layout.frontZ + tileSize * 1.4),
       new Vector3(tileSize * 0.6, 1.35, layout.frontZ + tileSize * 2.6),
       new Vector3(tileSize * 1.9, 1.2, layout.frontZ + tileSize * 3.4),
     ];
 
+    // slightly bigger pools, less nuclear center, smoother falloff
     warmLightPositions.forEach((position, index) => {
-      const pointLight = new PointLight(`hideout.warmLight.${index}`, position, scene);
+      const pointLight = new PointLight(
+        `hideout.warmLight.${index}`,
+        position,
+        scene
+      );
       pointLight.diffuse = warmLightColor;
       pointLight.specular = warmSpecular;
-      pointLight.intensity = 0.95;
-      pointLight.range = 4.6;
+      pointLight.intensity = 0.8; // was 0.95, so the middle isn't pure white
+      pointLight.range = 6.0;     // was 4.6, spreads farther across floor
       pointLight.falloffType = PointLight.FALLOFF_PHYSICAL;
     });
 
-    const fillLight = new PointLight("hideout.coolFill", new Vector3(0, 4.6, layout.centerZ - tileSize * 0.3), scene);
-    fillLight.diffuse = new Color3(0.25, 0.36, 0.55);
-    fillLight.specular = new Color3(0.18, 0.28, 0.45);
-    fillLight.intensity = 0.35;
-    fillLight.range = Math.max(layout.width, layout.depth) * 0.6;
+    // this is our "soft room glow," not just a pin light
+    const fillLight = new PointLight(
+      "hideout.coolFill",
+      new Vector3(0, 4.6, layout.centerZ - tileSize * 0.3),
+      scene
+    );
+    fillLight.diffuse  = new Color3(0.35, 0.5, 0.75);   // brighter cool tone
+    fillLight.specular = new Color3(0.22, 0.33, 0.5);
+    fillLight.intensity = 0.7;                          // was 0.42
+    fillLight.range     = Math.max(layout.width, layout.depth) * 1.3; // was 0.95
     fillLight.falloffType = PointLight.FALLOFF_PHYSICAL;
   }
 
