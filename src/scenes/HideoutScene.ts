@@ -24,6 +24,7 @@ import { SaveService } from "../state/SaveService";
 import { Enemy } from "../gameplay/Enemy";
 import { PostFXConfig } from "../visuals/PostFXConfig";
 import { VisualPresetManager, type LightPresetConfig } from "../visuals/VisualPresetManager";
+import { EffectsFactory } from "../visuals/EffectsFactory";
 import { MaterialLibrary } from "../visuals/MaterialLibrary";
 
 interface OccluderController {
@@ -285,6 +286,8 @@ export class HideoutScene implements SceneBase {
     await this.spawnPlayer();
     this.applyCurrentVisualPreset();
     HudUI.init();
+    HudUI.setVisualPresetLabel(VisualPresetManager.getActivePresetName());
+    HudUI.setFxIntensity(VisualPresetManager.getEffectIntensity());
     HudUI.onClickAttack(() => {
       this.input?.triggerVirtualAttack();
     });
@@ -296,6 +299,12 @@ export class HideoutScene implements SceneBase {
     });
     HudUI.onClickSpawn(() => {
       void this.spawnEnemyAt(this.getRandomSpawnPosition());
+    });
+    HudUI.onClickVisualPreset(() => {
+      this.cycleVisualPreset("HUD button");
+    });
+    HudUI.onFxIntensityChanged((value) => {
+      this.updateFxIntensity(value);
     });
 
     console.log("[QA] Hideout loaded");
@@ -330,6 +339,7 @@ export class HideoutScene implements SceneBase {
     }
 
     if (this.input.consumePostFxToggle()) {
+      this.cycleVisualPreset("keyboard");
       const presetName = VisualPresetManager.cyclePreset();
       console.log(`[QA] Switched visual preset to ${presetName}`);
       this.applyCurrentVisualPreset();
@@ -976,6 +986,37 @@ export class HideoutScene implements SceneBase {
     }
 
     const preset = VisualPresetManager.getActivePreset();
+    const intensityScale = VisualPresetManager.getEffectIntensity();
+    PostFXConfig.applyPreset(preset.postfx ?? undefined, intensityScale);
+    PostFXConfig.apply(scene);
+    this.applyLightPreset(preset.lights ?? undefined, intensityScale);
+    EffectsFactory.setGlobalIntensity(intensityScale);
+    HudUI.setVisualPresetLabel(VisualPresetManager.getActivePresetName());
+    HudUI.setFxIntensity(intensityScale);
+  }
+
+  private cycleVisualPreset(source: string): void {
+    const presetName = VisualPresetManager.cyclePreset();
+    console.log(`[QA] Switched visual preset to ${presetName} via ${source}`);
+    this.applyCurrentVisualPreset();
+  }
+
+  private updateFxIntensity(value: number): void {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    const clamped = Math.max(0, Math.min(1, value));
+    VisualPresetManager.setEffectIntensity(clamped);
+    HudUI.setFxIntensity(clamped);
+    this.applyCurrentVisualPreset();
+  }
+
+  private applyLightPreset(
+    preset?: LightPresetConfig | null,
+    intensityScale: number = 1
+  ): void {
+    const scale = Math.max(0, Math.min(1, intensityScale));
     PostFXConfig.applyPreset(preset.postfx ?? undefined);
     PostFXConfig.apply(scene);
     this.applyLightPreset(preset.lights ?? undefined);
@@ -998,6 +1039,17 @@ export class HideoutScene implements SceneBase {
       return fallback;
     };
 
+    const warmIntensityBase = resolve(preset?.warmLightIntensity ?? undefined, defaults.warmLightIntensity, "warmLightIntensity");
+    const warmRangeBase = resolve(preset?.warmLightRange ?? undefined, defaults.warmLightRange, "warmLightRange");
+    const coolIntensityBase = resolve(preset?.coolFillIntensity ?? undefined, defaults.coolFillIntensity, "coolFillIntensity");
+    const coolRangeBase = resolve(preset?.coolFillRange ?? undefined, defaults.coolFillRange, "coolFillRange");
+    const hemiIntensityBase = resolve(preset?.hemiIntensity ?? undefined, defaults.hemiIntensity, "hemiIntensity");
+
+    const warmIntensity = warmIntensityBase * scale;
+    const warmRange = warmRangeBase * scale;
+    const coolIntensity = coolIntensityBase * scale;
+    const coolRange = coolRangeBase * scale;
+    const hemiIntensity = hemiIntensityBase * scale;
     const warmIntensity = resolve(preset?.warmLightIntensity ?? undefined, defaults.warmLightIntensity, "warmLightIntensity");
     const warmRange = resolve(preset?.warmLightRange ?? undefined, defaults.warmLightRange, "warmLightRange");
     const coolIntensity = resolve(preset?.coolFillIntensity ?? undefined, defaults.coolFillIntensity, "coolFillIntensity");

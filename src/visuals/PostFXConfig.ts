@@ -52,6 +52,29 @@ const createDefaultSettings = (): PostFXSettings => ({
   fxaaEnabled: false,
 });
 
+const createNeutralSettings = (): PostFXSettings => ({
+  bloomEnabled: false,
+  bloomWeight: 0,
+  bloomThreshold: 1,
+  bloomKernel: 24,
+  vignetteWeight: 0,
+  vignetteColor: new Color3(0, 0, 0),
+  vignetteBlendMode: ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY,
+  exposure: 1,
+  contrast: 1,
+  saturation: 1,
+  globalSaturation: 0,
+  shadowsHue: 0,
+  shadowsDensity: 0,
+  shadowsSaturation: 0,
+  shadowsValue: 0,
+  highlightsHue: 0,
+  highlightsDensity: 0,
+  highlightsSaturation: 0,
+  highlightsValue: 0,
+  fxaaEnabled: false,
+});
+
 export interface PostFXPresetConfig {
   bloomEnabled?: boolean;
   bloomWeight?: number;
@@ -83,6 +106,10 @@ export class PostFXConfig {
     return createDefaultSettings();
   }
 
+  static applyPreset(
+    preset?: PostFXPresetConfig | null,
+    intensityScale: number = 1
+  ): void {
   static applyPreset(preset?: PostFXPresetConfig | null): void {
     const defaults = createDefaultSettings();
     if (!preset || typeof preset !== "object") {
@@ -91,6 +118,9 @@ export class PostFXConfig {
     }
 
     const settings = { ...defaults };
+    const neutral = createNeutralSettings();
+    const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+    const scale = clamp01(intensityScale);
 
     const assignNumber = <K extends keyof PostFXSettings>(
       key: K,
@@ -190,6 +220,59 @@ export class PostFXConfig {
         console.warn("[PostFXConfig] Unsupported vignette blend mode value.", blend);
       }
     }
+
+    const lerp = (from: number, to: number): number => from + (to - from) * scale;
+
+    settings.bloomEnabled = scale > 0 && settings.bloomEnabled;
+    settings.bloomWeight = lerp(neutral.bloomWeight, settings.bloomWeight);
+    settings.bloomThreshold = lerp(
+      neutral.bloomThreshold,
+      settings.bloomThreshold
+    );
+    settings.bloomKernel = Math.max(
+      0,
+      Math.round(lerp(neutral.bloomKernel, settings.bloomKernel))
+    );
+    settings.vignetteWeight = lerp(neutral.vignetteWeight, settings.vignetteWeight);
+    settings.vignetteColor = Color3.Lerp(
+      neutral.vignetteColor,
+      settings.vignetteColor,
+      scale
+    );
+    settings.vignetteBlendMode = scale > 0
+      ? settings.vignetteBlendMode
+      : neutral.vignetteBlendMode;
+    settings.exposure = lerp(neutral.exposure, settings.exposure);
+    settings.contrast = lerp(neutral.contrast, settings.contrast);
+    settings.saturation = lerp(neutral.saturation, settings.saturation);
+    settings.globalSaturation = lerp(
+      neutral.globalSaturation,
+      settings.globalSaturation
+    );
+    settings.shadowsHue = lerp(neutral.shadowsHue, settings.shadowsHue);
+    settings.shadowsDensity = lerp(
+      neutral.shadowsDensity,
+      settings.shadowsDensity
+    );
+    settings.shadowsSaturation = lerp(
+      neutral.shadowsSaturation,
+      settings.shadowsSaturation
+    );
+    settings.shadowsValue = lerp(neutral.shadowsValue, settings.shadowsValue);
+    settings.highlightsHue = lerp(neutral.highlightsHue, settings.highlightsHue);
+    settings.highlightsDensity = lerp(
+      neutral.highlightsDensity,
+      settings.highlightsDensity
+    );
+    settings.highlightsSaturation = lerp(
+      neutral.highlightsSaturation,
+      settings.highlightsSaturation
+    );
+    settings.highlightsValue = lerp(
+      neutral.highlightsValue,
+      settings.highlightsValue
+    );
+    settings.fxaaEnabled = scale > 0 && settings.fxaaEnabled;
 
     PostFXConfig.settings = settings;
   }

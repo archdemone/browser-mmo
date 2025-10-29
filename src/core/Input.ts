@@ -48,6 +48,10 @@ export class Input {
 
     this.mouseDownHandler = (event: MouseEvent) => {
       console.log(`[INPUT] Mouse down event: button ${event.button}, target: ${event.target?.tagName}`);
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest("#hud-root") && !target.closest(".attack-button")) {
+        return;
+      }
       if (event.button === 0) {
         // Left click triggers attack by simulating HUD button click
         const attackButton = document.querySelector('.attack-button') as HTMLElement;
@@ -68,6 +72,10 @@ export class Input {
 
     this.pointerDownHandler = (event: PointerEvent) => {
       console.log(`[INPUT] Pointer down event: button ${event.button}, target: ${event.target?.tagName}`);
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest("#hud-root") && !target.closest(".attack-button")) {
+        return;
+      }
       if (event.button === 0) {
         // Left click triggers attack by simulating HUD button click
         const attackButton = document.querySelector('.attack-button') as HTMLElement;

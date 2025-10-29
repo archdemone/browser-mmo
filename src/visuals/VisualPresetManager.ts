@@ -91,6 +91,7 @@ export class VisualPresetManager {
   private static activePreset: string = "gameplay";
   private static loading: Promise<void> | null = null;
   private static initialized = false;
+  private static effectIntensity = 1;
 
   static async initialize(): Promise<void> {
     if (VisualPresetManager.initialized) {
@@ -113,6 +114,22 @@ export class VisualPresetManager {
   static getActivePreset(): VisualPresetDefinition {
     return VisualPresetManager.presets[VisualPresetManager.activePreset] ??
       DEFAULT_PRESETS.gameplay;
+  }
+
+  static getEffectIntensity(): number {
+    return VisualPresetManager.effectIntensity;
+  }
+
+  static setEffectIntensity(value: number): void {
+    if (Number.isFinite(value)) {
+      const clamped = Math.max(0, Math.min(1, value));
+      VisualPresetManager.effectIntensity = clamped;
+    } else {
+      console.warn(
+        "[VisualPresetManager] Ignoring non-finite effect intensity value:",
+        value
+      );
+    }
   }
 
   static cyclePreset(): string {
@@ -147,6 +164,10 @@ export class VisualPresetManager {
 
   static applyActivePreset(): void {
     const preset = VisualPresetManager.getActivePreset();
+    PostFXConfig.applyPreset(
+      preset.postfx ?? undefined,
+      VisualPresetManager.effectIntensity
+    );
     PostFXConfig.applyPreset(preset.postfx ?? undefined);
   }
 
