@@ -110,6 +110,7 @@ export class PostFXConfig {
     preset?: PostFXPresetConfig | null,
     intensityScale: number = 1
   ): void {
+  static applyPreset(preset?: PostFXPresetConfig | null): void {
     const defaults = createDefaultSettings();
     if (!preset || typeof preset !== "object") {
       PostFXConfig.settings = defaults;

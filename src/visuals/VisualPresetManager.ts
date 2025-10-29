@@ -168,6 +168,7 @@ export class VisualPresetManager {
       preset.postfx ?? undefined,
       VisualPresetManager.effectIntensity
     );
+    PostFXConfig.applyPreset(preset.postfx ?? undefined);
   }
 
   private static async loadPresetsFromJson(): Promise<void> {

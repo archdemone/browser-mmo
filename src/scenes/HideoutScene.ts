@@ -340,6 +340,9 @@ export class HideoutScene implements SceneBase {
 
     if (this.input.consumePostFxToggle()) {
       this.cycleVisualPreset("keyboard");
+      const presetName = VisualPresetManager.cyclePreset();
+      console.log(`[QA] Switched visual preset to ${presetName}`);
+      this.applyCurrentVisualPreset();
     }
 
     // Consume debug spawn input so hideout never spawns enemies.
@@ -1014,6 +1017,12 @@ export class HideoutScene implements SceneBase {
     intensityScale: number = 1
   ): void {
     const scale = Math.max(0, Math.min(1, intensityScale));
+    PostFXConfig.applyPreset(preset.postfx ?? undefined);
+    PostFXConfig.apply(scene);
+    this.applyLightPreset(preset.lights ?? undefined);
+  }
+
+  private applyLightPreset(preset?: LightPresetConfig | null): void {
     const defaults = this.lightingDefaults;
 
     const resolve = (value: number | undefined, fallback: number, label: string): number => {
@@ -1041,6 +1050,11 @@ export class HideoutScene implements SceneBase {
     const coolIntensity = coolIntensityBase * scale;
     const coolRange = coolRangeBase * scale;
     const hemiIntensity = hemiIntensityBase * scale;
+    const warmIntensity = resolve(preset?.warmLightIntensity ?? undefined, defaults.warmLightIntensity, "warmLightIntensity");
+    const warmRange = resolve(preset?.warmLightRange ?? undefined, defaults.warmLightRange, "warmLightRange");
+    const coolIntensity = resolve(preset?.coolFillIntensity ?? undefined, defaults.coolFillIntensity, "coolFillIntensity");
+    const coolRange = resolve(preset?.coolFillRange ?? undefined, defaults.coolFillRange, "coolFillRange");
+    const hemiIntensity = resolve(preset?.hemiIntensity ?? undefined, defaults.hemiIntensity, "hemiIntensity");
 
     for (const light of this.warmLights) {
       light.intensity = warmIntensity;
