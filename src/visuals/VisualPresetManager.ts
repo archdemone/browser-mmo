@@ -4,6 +4,7 @@ import {
   PostFXOverrideId,
   PostFXPresetConfig,
 } from "./PostFXConfig";
+import { PostFXConfig, PostFXPresetConfig } from "./PostFXConfig";
 
 export interface LightPresetConfig {
   warmLightIntensity?: number;
@@ -406,6 +407,9 @@ export class VisualPresetManager {
       default:
         return undefined;
     }
+      VisualPresetManager.effectIntensity
+    );
+    PostFXConfig.applyPreset(preset.postfx ?? undefined);
   }
 
   private static async loadPresetsFromJson(): Promise<void> {

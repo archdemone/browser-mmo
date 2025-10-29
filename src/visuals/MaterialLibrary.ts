@@ -8,7 +8,6 @@ import {
 } from "babylonjs";
 
 type ColorTuple = [number, number, number];
-type ChannelKey = "r" | "g" | "b" | "a";
 
 interface StoneFloorMaterialConfig {
   materialName?: string;
@@ -33,8 +32,6 @@ interface PaladinMaterialDefinition {
   metallic?: number;
   roughness?: number;
   maskTexture?: string;
-  maskMetalChannel?: ChannelKey;
-  maskRoughnessChannel?: ChannelKey;
   maskIntensity?: number;
 }
 
@@ -69,12 +66,11 @@ async function loadConfig<TConfig>(path: string): Promise<TConfig> {
 
 function loadTexture(scene: Scene, url: string): Texture {
   const cached = textureCache.get(url);
-  if (cached && !cached.isDisposed()) {
+  if (cached && cached.isReadyOrNotBlocking()) {
     return cached;
   }
 
-  const texture = new Texture(url, scene, false, false, Texture.TRILINEAR_SAMPLINGMODE);
-  texture.invertY = false;
+  const texture = new Texture(url, scene, false, false, Texture.TRILINEAR_SAMPLINGMODE, undefined, undefined, undefined, false);
   textureCache.set(url, texture);
   return texture;
 }
@@ -99,19 +95,6 @@ function toColor(values: ColorTuple | undefined, fallback: Color3): Color3 {
   return Color3.FromArray(values);
 }
 
-function setMetalChannel(material: PBRMaterial, channel: ChannelKey | undefined): void {
-  material.useMetallnessFromMetallicTextureRed = channel === "r";
-  material.useMetallnessFromMetallicTextureGreen = channel === "g";
-  material.useMetallnessFromMetallicTextureBlue = channel === "b";
-  material.useMetallnessFromMetallicTextureAlpha = channel === "a";
-}
-
-function setRoughnessChannel(material: PBRMaterial, channel: ChannelKey | undefined): void {
-  material.useRoughnessFromMetallicTextureRed = channel === "r";
-  material.useRoughnessFromMetallicTextureGreen = channel === "g";
-  material.useRoughnessFromMetallicTextureBlue = channel === "b";
-  material.useRoughnessFromMetallicTextureAlpha = channel === "a";
-}
 
 export class MaterialLibrary {
   static async buildStoneFloorMaterials(scene: Scene): Promise<StoneFloorMaterialSet> {
@@ -133,8 +116,9 @@ export class MaterialLibrary {
     const roughness = loadTexture(scene, config.roughnessTexture);
     roughness.gammaSpace = false;
     baseMaterial.metallicTexture = roughness;
-    setMetalChannel(baseMaterial, undefined);
-    setRoughnessChannel(baseMaterial, "g");
+    // Use green channel for roughness, blue for metallness (standard PBR setup)
+    baseMaterial.useRoughnessFromMetallicTextureGreen = true;
+    baseMaterial.useMetallnessFromMetallicTextureBlue = true;
 
     applyUvTransform(albedo, uvScale, uvOffset);
     applyUvTransform(normal, uvScale, uvOffset);
@@ -171,7 +155,7 @@ export class MaterialLibrary {
     }
 
     const baseAlbedo = source.albedoTexture as Texture | null;
-    const baseNormal = (source.bumpTexture ?? source.normalTexture) as Texture | null;
+    const baseNormal = source.bumpTexture as Texture | null;
     const baseAmbient = source.ambientTexture as Texture | null;
 
     const built = new Map<string, PBRMaterial>();
@@ -203,8 +187,9 @@ export class MaterialLibrary {
         const mask = loadTexture(scene, def.maskTexture);
         mask.level = def.maskIntensity ?? 1;
         material.metallicTexture = mask;
-        setMetalChannel(material, def.maskMetalChannel ?? "b");
-        setRoughnessChannel(material, def.maskRoughnessChannel ?? "g");
+        // Use standard channel mapping: blue for metallness, green for roughness
+        material.useMetallnessFromMetallicTextureBlue = true;
+        material.useRoughnessFromMetallicTextureGreen = true;
       }
 
       built.set(def.key, material);

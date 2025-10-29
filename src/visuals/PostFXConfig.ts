@@ -34,17 +34,17 @@ const createDefaultSettings = (): PostFXSettings => ({
   bloomWeight: 0.22,
   bloomThreshold: 0.72,
   bloomKernel: 48,
-  vignetteWeight: 0.55,
+  vignetteWeight: 0.35,  // reduced from 0.55 for less aggressive edge darkening
   vignetteColor: new Color3(0.05, 0.05, 0.07),
   vignetteBlendMode: ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY,
-  exposure: 0.88,
+  exposure: 0.95,         // increased from 0.88 for better overall brightness
   contrast: 1.05,
   saturation: 0.9,
   globalSaturation: -12,
   shadowsHue: 210,
   shadowsDensity: 55,
   shadowsSaturation: 45,
-  shadowsValue: -6,
+  shadowsValue: -2,       // increased from -6 to reduce extreme shadow darkening
   highlightsHue: 40,
   highlightsDensity: 18,
   highlightsSaturation: 12,
@@ -135,6 +135,9 @@ export class PostFXConfig {
     intensityScale: number = 1,
     overrides?: Partial<Record<PostFXOverrideId, number>>
   ): void {
+    intensityScale: number = 1
+  ): void {
+  static applyPreset(preset?: PostFXPresetConfig | null): void {
     const defaults = createDefaultSettings();
     if (!preset || typeof preset !== "object") {
       PostFXConfig.settings = defaults;

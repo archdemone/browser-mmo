@@ -55,6 +55,9 @@ class HudUIImpl {
   private visualControlValues: Map<string, HTMLSpanElement> = new Map();
   private visualControlDefinitions: Map<string, VisualControlDefinition> = new Map();
   private visualControlChangeHandler: ((id: VisualControlId, value: number) => void) | null = null;
+  private fxSliderValue: HTMLSpanElement | null = null;
+  private fxIntensityHandler: ((value: number) => void) | null = null;
+  private fxIntensity: number = 1;
 
   init(): void {
     if (typeof document === "undefined") {
@@ -219,6 +222,53 @@ class HudUIImpl {
     });
     topLeft.appendChild(this.visualPresetButton);
 
+    const fxSliderContainer = document.createElement("div");
+    fxSliderContainer.style.display = "flex";
+    fxSliderContainer.style.alignItems = "center";
+    fxSliderContainer.style.gap = "8px";
+    fxSliderContainer.style.pointerEvents = "auto";
+    fxSliderContainer.style.alignSelf = "flex-start";
+
+    const fxLabel = document.createElement("span");
+    fxLabel.textContent = "FX Intensity";
+    fxLabel.style.fontSize = "11px";
+    fxLabel.style.opacity = "0.85";
+    fxSliderContainer.appendChild(fxLabel);
+
+    this.fxSlider = document.createElement("input");
+    this.fxSlider.type = "range";
+    this.fxSlider.min = "0";
+    this.fxSlider.max = "100";
+    this.fxSlider.value = Math.round(this.fxIntensity * 100).toString();
+    this.fxSlider.style.width = "120px";
+    this.fxSlider.style.cursor = "pointer";
+    this.fxSlider.addEventListener("input", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const target = event.currentTarget as HTMLInputElement;
+      const value = Number.parseFloat(target.value);
+      if (!Number.isFinite(value)) {
+        return;
+      }
+      const normalized = Math.max(0, Math.min(100, value)) / 100;
+      this.fxIntensity = normalized;
+      if (this.fxSliderValue) {
+        this.fxSliderValue.textContent = `${Math.round(normalized * 100)}%`;
+      }
+      if (this.fxIntensityHandler) {
+        this.fxIntensityHandler(normalized);
+      }
+    });
+    fxSliderContainer.appendChild(this.fxSlider);
+
+    this.fxSliderValue = document.createElement("span");
+    this.fxSliderValue.textContent = `${Math.round(this.fxIntensity * 100)}%`;
+    this.fxSliderValue.style.fontSize = "11px";
+    this.fxSliderValue.style.opacity = "0.7";
+    fxSliderContainer.appendChild(this.fxSliderValue);
+
+    topLeft.appendChild(fxSliderContainer);
+
     this.abilityBar = document.createElement("div");
     this.abilityBar.style.position = "absolute";
     this.abilityBar.style.bottom = "16px";
@@ -382,6 +432,13 @@ class HudUIImpl {
       this.updateVisualControlValue("effects.intensity", clamped);
     } else if (this.fxSlider) {
       this.fxSlider.value = Math.round(clamped * 100).toString();
+    }
+    if (this.fxSlider) {
+      this.fxSlider.value = Math.round(clamped * 100).toString();
+    }
+
+    if (this.fxSliderValue) {
+      this.fxSliderValue.textContent = `${Math.round(clamped * 100)}%`;
     }
   }
 
@@ -618,6 +675,7 @@ class HudUIImpl {
     this.visualControlValues.clear();
     this.visualControlDefinitions.clear();
     this.visualControlChangeHandler = null;
+    this.fxSliderValue = null;
     this.init();
   }
 
