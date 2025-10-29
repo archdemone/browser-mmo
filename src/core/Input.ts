@@ -7,6 +7,7 @@ export class Input {
   private attackQueued: boolean = false;
   private spawnEnemyQueued: boolean = false;
   private interactQueued: boolean = false;
+  private postFxToggleQueued: boolean = false;
   private readonly virtualMove: Set<"up" | "down" | "left" | "right"> = new Set();
   private virtualSprint: boolean = false;
   private debugAxisOverride: { x: number; z: number } | null = null;
@@ -34,6 +35,11 @@ export class Input {
       if (event.code === "KeyE" && !event.repeat) {
         this.interactQueued = true;
       }
+
+      if (event.code === "KeyP" && !event.repeat) {
+        this.postFxToggleQueued = true;
+        event.preventDefault();
+      }
     };
 
     this.keyUpHandler = (event: KeyboardEvent) => {
@@ -42,6 +48,10 @@ export class Input {
 
     this.mouseDownHandler = (event: MouseEvent) => {
       console.log(`[INPUT] Mouse down event: button ${event.button}, target: ${event.target?.tagName}`);
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest("#hud-root") && !target.closest(".attack-button")) {
+        return;
+      }
       if (event.button === 0) {
         // Left click triggers attack by simulating HUD button click
         const attackButton = document.querySelector('.attack-button') as HTMLElement;
@@ -62,6 +72,10 @@ export class Input {
 
     this.pointerDownHandler = (event: PointerEvent) => {
       console.log(`[INPUT] Pointer down event: button ${event.button}, target: ${event.target?.tagName}`);
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest("#hud-root") && !target.closest(".attack-button")) {
+        return;
+      }
       if (event.button === 0) {
         // Left click triggers attack by simulating HUD button click
         const attackButton = document.querySelector('.attack-button') as HTMLElement;
@@ -185,6 +199,14 @@ export class Input {
   consumeInteract(): boolean {
     if (this.interactQueued) {
       this.interactQueued = false;
+      return true;
+    }
+    return false;
+  }
+
+  consumePostFxToggle(): boolean {
+    if (this.postFxToggleQueued) {
+      this.postFxToggleQueued = false;
       return true;
     }
     return false;

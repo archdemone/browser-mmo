@@ -1,3 +1,8 @@
+import type {
+  VisualControlDefinition,
+  VisualControlId,
+} from "../visuals/VisualPresetManager";
+
 export interface HudState {
   hp: number;
   maxHP: number;
@@ -36,8 +41,20 @@ class HudUIImpl {
   private dodgeHandler: (() => void) | null = null;
   private enterHandler: (() => void) | null = null;
   private spawnHandler: (() => void) | null = null;
+  private visualPresetHandler: (() => void) | null = null;
   private invincibilityCheckbox: HTMLInputElement | null = null;
   private spawnButton: HTMLButtonElement | null = null;
+  private visualPresetButton: HTMLButtonElement | null = null;
+  private visualPresetName: string = "gameplay";
+  private fxSlider: HTMLInputElement | null = null;
+  private fxIntensityHandler: ((value: number) => void) | null = null;
+  private fxIntensity: number = 1;
+  private visualControlPanel: HTMLDivElement | null = null;
+  private visualControlList: HTMLDivElement | null = null;
+  private visualControlSliders: Map<string, HTMLInputElement> = new Map();
+  private visualControlValues: Map<string, HTMLSpanElement> = new Map();
+  private visualControlDefinitions: Map<string, VisualControlDefinition> = new Map();
+  private visualControlChangeHandler: ((id: VisualControlId, value: number) => void) | null = null;
 
   init(): void {
     if (typeof document === "undefined") {
@@ -180,6 +197,28 @@ class HudUIImpl {
     invincibilityContainer.appendChild(invincibilityLabel);
     topLeft.appendChild(invincibilityContainer);
 
+    // Visual preset toggle button (debug art direction control)
+    this.visualPresetButton = document.createElement("button");
+    this.visualPresetButton.textContent = this.formatPresetLabel(this.visualPresetName);
+    this.visualPresetButton.style.padding = "4px 10px";
+    this.visualPresetButton.style.fontSize = "11px";
+    this.visualPresetButton.style.background = "rgba(40, 60, 90, 0.6)";
+    this.visualPresetButton.style.border = "1px solid rgba(200, 220, 255, 0.35)";
+    this.visualPresetButton.style.borderRadius = "4px";
+    this.visualPresetButton.style.color = "#dbe7ff";
+    this.visualPresetButton.style.cursor = "pointer";
+    this.visualPresetButton.style.pointerEvents = "auto";
+    this.visualPresetButton.style.alignSelf = "flex-start";
+    this.visualPresetButton.title = "Cycle visual preset (keyboard: P)";
+    this.visualPresetButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (this.visualPresetHandler) {
+        this.visualPresetHandler();
+      }
+    });
+    topLeft.appendChild(this.visualPresetButton);
+
     this.abilityBar = document.createElement("div");
     this.abilityBar.style.position = "absolute";
     this.abilityBar.style.bottom = "16px";
@@ -313,8 +352,243 @@ class HudUIImpl {
     this.spawnHandler = cb;
   }
 
+  onClickVisualPreset(cb: (() => void) | null): void {
+    this.visualPresetHandler = cb;
+  }
+
+  onFxIntensityChanged(cb: ((value: number) => void) | null): void {
+    this.fxIntensityHandler = cb;
+  }
+
+  setVisualPresetLabel(name: string): void {
+    if (typeof name === "string" && name.length > 0) {
+      this.visualPresetName = name;
+    }
+
+    if (this.visualPresetButton) {
+      this.visualPresetButton.textContent = this.formatPresetLabel(this.visualPresetName);
+    }
+  }
+
+  setFxIntensity(value: number): void {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    const clamped = Math.max(0, Math.min(1, value));
+    this.fxIntensity = clamped;
+
+    if (this.visualControlSliders.has("effects.intensity")) {
+      this.updateVisualControlValue("effects.intensity", clamped);
+    } else if (this.fxSlider) {
+      this.fxSlider.value = Math.round(clamped * 100).toString();
+    }
+  }
+
   getInvincibilityState(): boolean {
     return this.invincibilityCheckbox?.checked ?? false;
+  }
+
+  onVisualControlChanged(cb: ((id: VisualControlId, value: number) => void) | null): void {
+    this.visualControlChangeHandler = cb;
+  }
+
+  setVisualControls(definitions: VisualControlDefinition[]): void {
+    if (!this.root) {
+      this.init();
+    }
+    if (!this.root) {
+      return;
+    }
+
+    this.ensureVisualControlPanel();
+    if (!this.visualControlList) {
+      return;
+    }
+
+    this.visualControlList.innerHTML = "";
+    this.visualControlSliders.clear();
+    this.visualControlValues.clear();
+    this.visualControlDefinitions.clear();
+
+    let currentGroup: string | null = null;
+    for (const definition of definitions) {
+      this.visualControlDefinitions.set(definition.id, definition);
+
+      if (definition.group !== currentGroup) {
+        currentGroup = definition.group;
+        const groupHeader = document.createElement("div");
+        groupHeader.textContent = currentGroup;
+        groupHeader.style.fontSize = "12px";
+        groupHeader.style.fontWeight = "700";
+        groupHeader.style.opacity = "0.75";
+        groupHeader.style.letterSpacing = "0.04em";
+        groupHeader.style.textTransform = "uppercase";
+        groupHeader.style.marginTop = this.visualControlList.childElementCount > 0 ? "8px" : "0";
+        this.visualControlList.appendChild(groupHeader);
+      }
+
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.flexDirection = "column";
+      row.style.gap = "4px";
+      row.style.pointerEvents = "auto";
+
+      const labelRow = document.createElement("div");
+      labelRow.style.display = "flex";
+      labelRow.style.justifyContent = "space-between";
+      labelRow.style.alignItems = "center";
+
+      const label = document.createElement("span");
+      label.textContent = definition.label;
+      label.style.fontSize = "12px";
+      label.style.opacity = "0.9";
+      labelRow.appendChild(label);
+
+      const valueLabel = document.createElement("span");
+      valueLabel.textContent = this.formatVisualControlValue(definition.id, definition.min);
+      valueLabel.style.fontSize = "11px";
+      valueLabel.style.opacity = "0.7";
+      valueLabel.style.marginLeft = "8px";
+      labelRow.appendChild(valueLabel);
+
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.min = definition.min.toString();
+      slider.max = definition.max.toString();
+      slider.value = definition.min.toString();
+      slider.style.width = "100%";
+      slider.style.cursor = "pointer";
+      slider.style.accentColor = "#c28d3c";
+      if (definition.step !== undefined) {
+        slider.step = definition.step.toString();
+      }
+
+      slider.addEventListener("input", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = event.currentTarget as HTMLInputElement;
+        const numeric = Number.parseFloat(target.value);
+        if (!Number.isFinite(numeric)) {
+          return;
+        }
+        this.handleVisualControlInput(definition.id, numeric);
+      });
+
+      row.appendChild(labelRow);
+      row.appendChild(slider);
+
+      this.visualControlList.appendChild(row);
+      this.visualControlSliders.set(definition.id, slider);
+      this.visualControlValues.set(definition.id, valueLabel);
+
+      if (definition.id === "effects.intensity") {
+        this.fxSlider = slider;
+      }
+    }
+
+    if (this.visualControlSliders.has("effects.intensity")) {
+      this.updateVisualControlValue("effects.intensity", this.fxIntensity);
+    }
+  }
+
+  updateVisualControlValue(id: VisualControlId, value: number): void {
+    const slider = this.visualControlSliders.get(id);
+    if (slider) {
+      slider.value = value.toString();
+    }
+
+    const valueLabel = this.visualControlValues.get(id);
+    if (valueLabel) {
+      valueLabel.textContent = this.formatVisualControlValue(id, value);
+    }
+
+    if (id === "effects.intensity") {
+      this.fxIntensity = value;
+    }
+  }
+
+  private ensureVisualControlPanel(): void {
+    if (this.visualControlPanel || !this.root) {
+      return;
+    }
+
+    const panel = document.createElement("div");
+    panel.style.position = "absolute";
+    panel.style.top = "16px";
+    panel.style.right = "16px";
+    panel.style.width = "260px";
+    panel.style.maxHeight = "80%";
+    panel.style.overflowY = "auto";
+    panel.style.background = "rgba(10, 12, 18, 0.88)";
+    panel.style.border = "1px solid rgba(255, 255, 255, 0.15)";
+    panel.style.borderRadius = "10px";
+    panel.style.padding = "12px";
+    panel.style.display = "flex";
+    panel.style.flexDirection = "column";
+    panel.style.gap = "10px";
+    panel.style.pointerEvents = "auto";
+    panel.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.4)";
+
+    const title = document.createElement("div");
+    title.textContent = "Visual Controls";
+    title.style.fontSize = "13px";
+    title.style.fontWeight = "700";
+    title.style.opacity = "0.85";
+    panel.appendChild(title);
+
+    const list = document.createElement("div");
+    list.style.display = "flex";
+    list.style.flexDirection = "column";
+    list.style.gap = "6px";
+    panel.appendChild(list);
+
+    this.root.appendChild(panel);
+    this.visualControlPanel = panel;
+    this.visualControlList = list;
+  }
+
+  private handleVisualControlInput(id: VisualControlId, value: number): void {
+    this.updateVisualControlValue(id, value);
+
+    if (id === "effects.intensity") {
+      this.fxIntensity = value;
+      if (this.fxIntensityHandler) {
+        this.fxIntensityHandler(value);
+      }
+    }
+
+    if (this.visualControlChangeHandler) {
+      this.visualControlChangeHandler(id, value);
+    }
+  }
+
+  private formatVisualControlValue(id: VisualControlId, value: number): string {
+    const definition = this.visualControlDefinitions.get(id);
+    if (!definition) {
+      return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2);
+    }
+
+    if (id === "postfx.vignetteBlendMode") {
+      return value >= 0.5 ? "Opaque" : "Multiply";
+    }
+
+    if (
+      definition.min === 0 &&
+      definition.max === 1 &&
+      definition.step !== undefined &&
+      definition.step >= 1
+    ) {
+      return value >= 0.5 ? "On" : "Off";
+    }
+
+    if (definition.step !== undefined && definition.step >= 1 && definition.max > 1) {
+      return Math.round(value).toString();
+    }
+
+    const step = definition.step ?? 0.01;
+    const precision = Math.min(4, Math.max(0, Math.ceil(-Math.log10(step))));
+    return value.toFixed(precision);
   }
 
   private captureElements(root: HTMLDivElement): void {
@@ -334,6 +608,16 @@ class HudUIImpl {
     this.skill2Slot = null;
     this.enterPrompt = null;
     this.deathBanner = null;
+    this.spawnButton = null;
+    this.invincibilityCheckbox = null;
+    this.visualPresetButton = null;
+    this.fxSlider = null;
+    this.visualControlPanel = null;
+    this.visualControlList = null;
+    this.visualControlSliders.clear();
+    this.visualControlValues.clear();
+    this.visualControlDefinitions.clear();
+    this.visualControlChangeHandler = null;
     this.init();
   }
 
@@ -452,6 +736,17 @@ class HudUIImpl {
       return;
     }
     slot.style.opacity = ready ? "1" : "0.4";
+  }
+
+  private formatPresetLabel(name: string): string {
+    if (!name) {
+      return "FX: (unknown)";
+    }
+    const formatted = name
+      .split(/[\s_-]+/)
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(" ");
+    return `FX: ${formatted}`;
   }
 }
 
