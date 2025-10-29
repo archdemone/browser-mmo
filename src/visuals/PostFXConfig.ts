@@ -135,9 +135,6 @@ export class PostFXConfig {
     intensityScale: number = 1,
     overrides?: Partial<Record<PostFXOverrideId, number>>
   ): void {
-    intensityScale: number = 1
-  ): void {
-  static applyPreset(preset?: PostFXPresetConfig | null): void {
     const defaults = createDefaultSettings();
     if (!preset || typeof preset !== "object") {
       PostFXConfig.settings = defaults;
