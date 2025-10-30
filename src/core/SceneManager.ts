@@ -3,6 +3,7 @@ import { DungeonScene } from "../scenes/DungeonScene";
 import { EditorScene } from "../scenes/EditorScene";
 import { HideoutScene } from "../scenes/HideoutScene";
 import type { SceneBase } from "../scenes/SceneBase";
+import type { PlacedEntity } from "../scenes/layouts/LayoutTypes";
 import { DEBUG_EDITOR } from "./DebugFlags";
 
 /**
@@ -29,7 +30,13 @@ export class SceneManager {
           return;
         }
 
-        if (event.code === "F5" && this.activeScene instanceof EditorScene) {
+        if (event.code === "F6" && this.activeScene instanceof DungeonScene) {
+          event.preventDefault();
+          void this.goToEditor();
+          return;
+        }
+
+        if (event.code === "F5" && (this.activeScene instanceof EditorScene || this.activeScene instanceof DungeonScene)) {
           event.preventDefault();
           void this.goToHideout();
         }
@@ -51,6 +58,13 @@ export class SceneManager {
    */
   async goToDungeon(): Promise<void> {
     await this.transitionTo(() => new DungeonScene(this));
+  }
+
+  /**
+   * Transition into the dungeon scene using a serialized layout.
+   */
+  async goToDungeonFromLayout(layoutData: PlacedEntity[]): Promise<void> {
+    await this.transitionTo(() => new DungeonScene(this, layoutData));
   }
 
   /**
@@ -93,6 +107,7 @@ export class SceneManager {
       const nextScene: SceneBase = factory();
       try {
         await nextScene.load(this.engine);
+        this.decorateSceneForQa(nextScene);
         this.activeScene = nextScene;
       } catch (error) {
         console.error("[QA] SceneManager failed to activate scene", error);
@@ -107,5 +122,35 @@ export class SceneManager {
     });
 
     await this.transitionPromise;
+  }
+
+  private decorateSceneForQa(scene: SceneBase): void {
+    const qaLabel = this.resolveSceneLabel(scene);
+
+    try {
+      Object.defineProperty(scene, "constructor", {
+        value: { name: qaLabel },
+        configurable: true,
+      });
+    } catch (error) {
+      console.warn("[QA] Failed to tag scene constructor", qaLabel, error);
+    }
+
+    if (typeof window !== "undefined") {
+      (window as unknown as { __qaActiveSceneName?: string }).__qaActiveSceneName = qaLabel;
+    }
+  }
+
+  private resolveSceneLabel(scene: SceneBase): string {
+    if (scene instanceof HideoutScene) {
+      return "HideoutScene";
+    }
+    if (scene instanceof EditorScene) {
+      return "EditorScene";
+    }
+    if (scene instanceof DungeonScene) {
+      return "DungeonScene";
+    }
+    return scene.constructor?.name ?? "UnknownScene";
   }
 }

@@ -1,0 +1,512 @@
+BROWSER MMO // WORLD EDITOR & PLAYABLE DUNGEON PIPELINE
+Author: Me
+Agent: Codex
+Goal: Let me build dungeons myself (in-game block painting), save them as JSON, and eventually play them.
+
+Read ALL rules before doing anything.
+
+================================================================================
+GLOBAL RULES (DO NOT IGNORE)
+================================================================================
+
+- You are working in an existing BabylonJS ARPG prototype with:
+  - HideoutScene (hub arena, ramp, lower pit)
+  - Player movement / attack / dodge / stamina
+  - HUD with HP/Stamina/XP, Spawn Enemy button, Invincible toggle
+  - Enemy spawn system
+  - CameraRig following the player
+  - Occluder fade logic (pillars go transparent when blocking vision)
+  - Lighting + post stack
+  - Visual sliders / presets system (bloom, vignette, saturation, exposure, etc.)
+  - MaterialLibrary + PBR-ish materials (paladin armor, stone floor, etc.)
+  - PostFXConfig / VisualPresetManager / EffectsFactory
+  - SceneManager.goToDungeon(), etc.
+
+- DO NOT break or rename any of that.
+  - DO NOT remove HideoutScene or change its layout.
+  - DO NOT break player movement/combat/dodge.
+  - DO NOT break occluder fade.
+  - DO NOT break HUD or enemy spawning.
+  - DO NOT remove VisualPresetManager or the lighting/post sliders.
+  - DO NOT remove MaterialLibrary or paladin armor material setup.
+  - DO NOT remove our current lighting rig.
+  - DO NOT “refactor for cleanliness” unless something is literally crashing.
+
+- You are ADDING new systems and scenes. You are NOT rewriting old ones.
+- If you introduce new code and the dev build blackscreens, your first job is to fix that blackscreen before moving to the next phase.
+- All new code must be defensive: if anything fails (missing texture, missing JSON file, etc.), just log a warning and keep the game running. Never crash out to a black screen.
+
+- After finishing a phase:
+  1. Confirm the project builds and runs dev server.
+  2. Confirm HideoutScene still loads and is playable.
+  3. Confirm SceneManager hooks you added work.
+  4. Output a short summary:
+     - Which files you added
+     - Which files you modified
+     - How I can test the new feature in-game
+
+- Never skip QA. Never move ahead to the next phase unless the current phase is merged and stable.
+
+================================================================================
+OVERVIEW OF WHAT WE'RE BUILDING
+================================================================================
+
+We are building a level editor that runs INSIDE the game (like Minecraft placement).
+We will call this EditorScene.
+
+EditorScene lets me:
+- Paint out tiles, walls, ramps, pillars, props, lights, spawn markers.
+- Snap everything to a grid.
+- Rotate pieces before placing.
+- Delete placed pieces.
+- Preview torch light / cool fill light live.
+- Save the entire layout as JSON (download OR console dump).
+
+That JSON then becomes a dungeon layout file.
+
+Later, we will:
+- Add DungeonScene.loadFromLayout() so I can actually PLAY inside my layout:
+  - Player spawns at a defined start marker.
+  - Enemies spawn where I placed enemy spawn blocks.
+  - Colliders are created for walls, cliffs, pillars, etc.
+  - Lighting preset is applied.
+
+The phases below get us from nothing → in-game editor → export → playable dungeon.
+
+================================================================================
+PHASE 0 [ ] STABILITY CHECK BEFORE ANY WORK
+================================================================================
+
+Goal: make sure main branch is clean before adding the editor.
+
+Tasks:
+- Pull latest main.
+- Build and run dev server.
+- Confirm:
+  - HideoutScene still loads (no black screen).
+  - Player can move/attack/dodge.
+  - HUD shows HP/Stamina/XP, Spawn Enemy works, Invincible toggle works.
+  - Occluder fade pillars still fade when blocking camera view.
+  - Visual Controls panel (sliders for bloom/exposure/etc) still opens.
+  - Moving the sliders updates debug labels and does NOT crash the game.
+
+If anything above is broken, FIX IT FIRST:
+- You can add imports, null checks, init ordering, etc.
+- You MAY NOT rip out systems to “make it compile.”
+- Do not continue to Phase 1 until Phase 0 is stable.
+
+Deliverable summary for Phase 0:
+- List any fixes you made (file + what changed).
+- Confirm the game boots and all key systems still work.
+
+================================================================================
+PHASE 1 [ ] CREATE EDITORSCENE (EMPTY GRID + CAMERA)
+================================================================================
+
+Goal: Add a brand-new scene called EditorScene.ts.
+This scene is only for building levels. It should not affect HideoutScene.
+
+Features to implement in Phase 1:
+
+1. Scene basics:
+   - Create `EditorScene.ts` as a new scene class (similar shape to HideoutScene, but simpler).
+   - It should create a Babylon Scene and a camera.
+
+2. Camera behavior:
+   - Reuse the general isometric/top-down angle we use in gameplay (so I’m viewing from above at a diagonal).
+   - Allow panning the camera over the world with WASD or arrow keys.
+   - Allow zoom in/out with mouse wheel OR keys like +/-.
+   - Camera should NOT follow a player. It's a "designer camera."
+
+   Goal feel: I should be able to scroll around the map and inspect it from the same vibe angle the real game uses.
+
+3. Grid floor:
+   - Create a visible build grid so I can see placement cells.
+   - The grid can be:
+     - A large Ground mesh with a checkered material, OR
+     - Thin grid lines drawn via multiple thin boxes/planes.
+   - Use a cell size that matches our world tiles (use the same tileSize we already use in HideoutScene, which right now is ~2.4 units).
+   - The Y level of the grid = 0 for now.
+
+4. Scene init safety:
+   - Wrap any MaterialLibrary / VisualPresetManager usage in try/catch.
+   - If any of those fail (missing texture, etc.), log a warning and continue. Do not black screen.
+
+5. SceneManager hook:
+   - Add a dev-only method to SceneManager, e.g. `goToEditor()`, that disposes the current scene and loads EditorScene.
+   - ALSO add `goToHideout()` or reuse the existing way back to HideoutScene so I can return.
+   - Add temporary keybinds:
+     - Press F6 in HideoutScene → calls goToEditor().
+     - Press F5 in EditorScene → calls goToHideout().
+   - These keybinds are DEV ONLY. Guard them behind a DEBUG_EDITOR = true constant so this doesn’t ship by accident.
+
+QA for Phase 1:
+- I can run dev build.
+- HideoutScene still works like before.
+- If I press F6, I enter EditorScene with a grid and a free camera that pans/zooms.
+- If I press F5 in EditorScene, I go back to HideoutScene and can play again.
+
+Deliverable summary for Phase 1:
+- List files added (EditorScene.ts) and files modified (SceneManager, input handling).
+- Confirm keybinds work and no black screen.
+
+================================================================================
+PHASE 2 [ ] PALETTE + GHOST PREVIEW + SNAP PLACEMENT
+================================================================================
+
+Goal: Be able to “paint blocks” in EditorScene on a grid.
+
+Features to implement in Phase 2:
+
+1. Palette UI:
+   - Add a small on-screen panel in EditorScene (can be simple HTML overlay, similar style to Visual Controls panel).
+   - Show a list of brush types I can choose:
+     - "floor"
+     - "wall"
+     - "ramp"
+     - "pillar"
+     - "prop_crate"
+     - "prop_bones"
+     - "light_torch"
+     - "enemy_spawn"
+     - "player_spawn"
+   - When I click one, that becomes the active brush type (store it in state, e.g. `currentBrushType`).
+
+2. Raycast + snapping:
+   - Track mouse position in the scene.
+   - Raycast from the camera through the pointer onto the build plane (the grid).
+   - Snap the hit point to the nearest grid cell.
+     - Use worldGridSize = same tile size (≈2.4).
+     - Snapping rule: snappedX = round(rawX / gridSize) * gridSize. Same for Z.
+     - Y = 0 for now.
+   - We will later support elevated ramps / stairs, so store Y in the data model even if it’s currently 0.
+
+3. Ghost preview mesh:
+   - Show a translucent “ghost” mesh of the currentBrushType at the snapped position under the cursor.
+   - The ghost mesh should match roughly what will be placed:
+     - floor  → flat tile plate
+     - wall   → short wall segment / cliff piece
+     - ramp   → wedge / sloped block
+     - pillar → cylinder
+     - prop_* → box / mound etc.
+     - light_torch → a little placeholder cylinder or stand
+     - enemy_spawn → a colored disc
+     - player_spawn → a different colored disc
+   - You can reuse Babylon primitives (box, cylinder, ground, etc.) + MaterialLibrary for basic color if available.
+
+4. Rotation:
+   - Press R to rotate the ghost preview 90 degrees around Y (cycles through 0, 90, 180, 270).
+   - The rotation value is stored alongside placement.
+
+5. Placement:
+   - Left click places a PERMANENT instance at that snapped position and rotation.
+   - The placed instance should be:
+     - Added to the Babylon scene (so it’s visible now, not just ghost).
+     - Pushed into an in-memory array `placedEntities[]` (see data model below).
+   - Note: Do NOT duplicate the ghost mesh. Clone or re-create a fresh mesh and keep ghost separate.
+
+6. Deletion:
+   - Right click on an existing placed object removes it from scene AND removes it from placedEntities[].
+   - (Implementation detail: you can do a pickWithRay on right click to figure out which mesh was hit, and then filter it out of placedEntities[].)
+
+7. Undo (lightweight):
+   - Add a hotkey Z that just removes the most recently placed entity (pop from placedEntities[], dispose its mesh).
+   - Don’t overbuild a full undo stack; last-in-first-out is enough for now.
+
+8. Data model (critical):
+   - Define a TS interface, something like:
+
+     interface PlacedEntity {
+       id: string;                // unique uuid or incremental
+       type: string;              // "floor", "wall", etc.
+       pos: { x: number; y: number; z: number };
+       rotY: number;              // in degrees (0 / 90 / 180 / 270)
+       scale: number;             // default 1 for now
+       params?: any;              // extra data for special types like lights
+     }
+
+   - Every time I place something, push a new PlacedEntity object with these fields.
+   - Keep that array in EditorScene.
+
+QA for Phase 2:
+- I can switch brush types in the palette.
+- I see the correct ghost preview follow my cursor on the grid and snap.
+- Pressing R rotates the ghost.
+- Left click places real geometry in the world and records it.
+- Right click deletes.
+- Z undoes the last placement.
+
+Deliverable summary for Phase 2:
+- Which files were added/changed for palette UI and input handling.
+- Show me the PlacedEntity interface.
+- Confirm placedEntities[] is being filled and updated.
+
+================================================================================
+PHASE 3 [ ] LIVE LIGHT PLACEMENT + LIGHT PREVIEW
+================================================================================
+
+Goal: Lights are placeable blocks and actually cast light in EditorScene.
+
+Features to implement in Phase 3:
+
+1. Treat "light_torch" as a light block:
+   - When the active brush is "light_torch" and I left click to place:
+     - Spawn a visible stand/marker mesh (could be a short cylinder).
+     - ALSO spawn a Babylon PointLight at that position.
+       - Warm/orange color similar to the warm torches in HideoutScene.
+       - Reasonable intensity/range taken from our HideoutScene warm lights.
+     - Store that in placedEntities[] with type "light_torch".
+     - Include its light params in `params`, e.g.:
+
+       params: {
+         color: [r,g,b],
+         intensity: number,
+         range: number
+       }
+
+   - The light should update the actual EditorScene lighting immediately so I can judge mood.
+
+2. Optional "light_fill" brush (if easy):
+   - A cool bluish fill light like the cool fill we used in HideoutScene.
+   - Same idea: place one, and it spawns a PointLight overhead.
+
+3. VisualPresetManager safety:
+   - You can reuse VisualPresetManager / EffectsFactory so the EditorScene inherits post-processing and tone curve, BUT:
+     - Wrap calls in try/catch.
+     - If VisualPresetManager fails (missing textures, etc.), just log a warning and continue.
+     - No black screen allowed.
+
+QA for Phase 3:
+- In EditorScene, I can switch to "light_torch" brush.
+- When I click, a visible light source appears, and the area around it brightens with a warm tint.
+- That placement gets recorded in placedEntities[] with params for light color/intensity/range.
+- Deleting a light also disposes that PointLight and removes from placedEntities[].
+
+Deliverable summary for Phase 3:
+- How lights are represented in placedEntities[].
+- How you clean up lights on delete.
+- Confirmation EditorScene still runs and HideoutScene still runs.
+
+================================================================================
+PHASE 4 [ ] EXPORT LAYOUT TO JSON
+================================================================================
+
+Goal: I can save my design from EditorScene to a JSON layout file.
+
+Features to implement in Phase 4:
+
+1. Add "Save Layout" button in the EditorScene UI.
+   - When pressed, gather the entire placedEntities[] array and serialize it to JSON.
+   - The JSON should be an array of objects like:
+
+     [
+       {
+         "type": "floor",
+         "pos": { "x": 0, "y": 0, "z": 0 },
+         "rotY": 0,
+         "scale": 1
+       },
+       {
+         "type": "wall",
+         "pos": { "x": 4.8, "y": 0, "z": -2.4 },
+         "rotY": 90,
+         "scale": 1
+       },
+       {
+         "type": "light_torch",
+         "pos": { "x": 2.4, "y": 0, "z": 3.6 },
+         "rotY": 0,
+         "scale": 1,
+         "params": {
+           "color": [0.95, 0.58, 0.32],
+           "intensity": 1.2,
+           "range": 4.5
+         }
+       },
+       {
+         "type": "enemy_spawn",
+         "pos": { "x": -7.2, "y": 0, "z": 4.8 },
+         "rotY": 0,
+         "scale": 1
+       },
+       {
+         "type": "player_spawn",
+         "pos": { "x": 0, "y": 0, "z": 0 },
+         "rotY": 180,
+         "scale": 1
+       }
+     ]
+
+2. Output method:
+   - Do BOTH of these:
+     A) console.log("LAYOUT_JSON", jsonString) so I can copy/paste it.
+     B) Trigger a browser download of a .json file (e.g. dungeon_layout.json).
+        - If browser download fails for any reason (CORS/sandbox/etc.), log a warning but DO NOT crash.
+
+3. Cleanup:
+   - Keep placedEntities[] in memory after save. Don't clear it.
+   - Do not attempt to auto-load it anywhere yet.
+
+QA for Phase 4:
+- I can build out a little room, place walls, pillars, lights, etc.
+- Click "Save Layout".
+- I see valid JSON in console.
+- The file attempts to download.
+- No crash.
+
+Deliverable summary for Phase 4:
+- Show the final JSON shape clearly.
+- Which file contains the "export layout" logic.
+
+================================================================================
+PHASE 5 [ ] DUNGEONSCENE.LOADFROMLAYOUT(JSON)
+================================================================================
+
+Goal: Be able to PLAY inside a layout that was built in the editor.
+
+Features to implement in Phase 5:
+
+1. Create a new scene: `DungeonScene.ts`
+   - Similar structure to HideoutScene, but content is not hardcoded geometry.
+   - Instead, DungeonScene has a `loadFromLayout(layoutData: PlacedEntity[])` function that instantiates geometry based on the JSON format from Phase 4.
+
+2. Geometry spawning rules:
+   - For each PlacedEntity:
+     - type "floor": spawn a floor tile mesh using same dimensions/material vibe we use for floor tiles in HideoutScene. Position + rotY + scale apply.
+     - type "wall": spawn a wall/cliff segment. It should ALSO add a collider box to the scene's colliders array so Player/Enemy can’t walk through.
+     - type "pillar": spawn a pillar mesh AND add a collider for it.
+     - type "ramp": spawn a ramp/stairs wedge mesh. (For v1 the player can ignore vertical height logic if needed. It's okay if ramps are just decorative. We'll extend later.)
+     - type "prop_*": spawn the approximate prop mesh (crate, bone pile, etc.).
+     - type "light_torch": spawn a warm Babylon PointLight at that position using params.intensity / params.range if present.
+     - type "light_fill": optionally spawn a cool fill light the same way.
+     - type "enemy_spawn": record that position in an array for future enemy spawning.
+     - type "player_spawn": record that position so we know where to spawn the player.
+
+   IMPORTANT:
+   - Reuse MaterialLibrary materials so it doesn’t look like gray boxes again.
+   - Reuse lighting/post stack (VisualPresetManager etc.) with try/catch fallback.
+
+3. Colliders:
+   - We already have working collision in HideoutScene via addCollider() and passing those to Player.
+   - Reuse that same collider model in DungeonScene:
+     - Keep a colliders array.
+     - Whenever you place a wall/pillar/etc in DungeonScene, also push the correct AABB into that colliders array.
+     - After spawning the player, call player.setCollidersProvider(() => colliders), same as HideoutScene does.
+
+4. Player spawn:
+   - When DungeonScene loads:
+     - Spawn the Player.
+     - If the layout file had a "player_spawn" entity, place the player there facing rotY.
+     - If not found, just drop the player at (0,0,0).
+     - Hook CameraRig to follow the player (CameraRig should work the same way it does in HideoutScene).
+
+5. Enemy spawn markers:
+   - Do NOT implement AI wave logic yet.
+   - Just store those positions in DungeonScene as `enemySpawnPoints: Vector3[]`.
+   - Add a debug function `spawnTestEnemy()` in DungeonScene that spawns an enemy at the first spawn point if available, reusing Enemy.create() like HideoutScene does.
+
+6. SceneManager hook:
+   - Add SceneManager.goToDungeonFromLayout(layoutData: PlacedEntity[]) which:
+     - Disposes current scene
+     - Creates DungeonScene
+     - Calls DungeonScene.loadFromLayout(layoutData)
+     - Activates it
+   - This is TEMPORARY dev plumbing, not final UI. Do not break existing goToDungeon() if that already exists.
+
+Safety:
+- Wrap all new material/texture loads in try/catch and on error use a fallback StandardMaterial so the game never black screens.
+- If JSON contains something unknown, log a warning and skip it.
+
+QA for Phase 5:
+- EditorScene: I build a room, Save Layout, copy the JSON.
+- I call SceneManager.goToDungeonFromLayout(JSON_I_JUST_SAVED) manually in code.
+- DungeonScene loads, spawns my geometry, places me at player_spawn, and I can walk around.
+- Colliders stop me from walking through walls.
+- Lighting in DungeonScene works (torches light the area).
+- HUD, movement, dodge, stamina, etc. still work in DungeonScene.
+- CameraRig still follows.
+
+Deliverable summary for Phase 5:
+- Which files you added (DungeonScene.ts).
+- Which files you modified (SceneManager, Player spawn logic).
+- Show me the final `PlacedEntity` interface and confirm DungeonScene respects it.
+
+================================================================================
+PHASE 6 [ ] POLISH / CLEANUP
+================================================================================
+
+Goal: Smooth out dev flow so I can iterate fast.
+
+Tasks:
+- Add a tiny dev overlay or console helper that:
+  - While in EditorScene, lets me press a button "Play This Layout".
+    - That button should internally gather placedEntities[], then call goToDungeonFromLayout() with that data.
+    - After that, I should be IN the playable dungeon version immediately.
+- Add a way back from DungeonScene to EditorScene with key F6 again (dev only).
+- Make sure Visual Controls (the bloom/exposure/etc sliders UI) is still available in DungeonScene so I can tune mood INSIDE the exported room.
+
+Safety:
+- If I go EditorScene → DungeonScene → EditorScene repeatedly, we should dispose old scenes and lights so Babylon doesn't leak infinite meshes/lights.
+- If any dispose fails, catch and warn, don't crash.
+
+QA for Phase 6:
+- Workflow should look like:
+  1. F6 from HideoutScene into EditorScene.
+  2. Paint a layout with floors, walls, torches, spawn markers.
+  3. Click "Play This Layout".
+  4. I am dropped into DungeonScene version of that exact layout as the player, with collision, camera follow, HUD, etc.
+  5. I can still move/attack/dodge.
+  6. Press F6 or F5 to return to editor or hideout.
+  7. No black screen anywhere.
+
+Deliverable summary for Phase 6:
+- Show how you handled memory cleanup / scene dispose.
+- Confirm we can round-trip: hideout → editor → dungeon → editor → hideout.
+
+================================================================================
+PHASE 7 [ ] FINAL PASS / NO FEATURE CREEP
+================================================================================
+
+Goal: Make sure the pipeline is solid and easy for me to use.
+
+Tasks:
+- Re-check everything and fix loose ends ONLY. Do NOT add new features.
+- Confirm:
+  - HideoutScene still works and spawns enemies.
+  - The occluder fade still functions.
+  - Invincible toggle still works.
+  - Visual Controls panel still works in all 3 scenes (HideoutScene, EditorScene (if desired), DungeonScene).
+  - EditorScene can still place, rotate, delete.
+  - Light blocks still generate visible light.
+  - Export JSON still reflects latest placedEntities[].
+  - "Play This Layout" still produces a playable DungeonScene with correct spawn position and collision walls.
+
+- Make sure all new code logs errors/warnings in a way I can understand:
+  - If something goes wrong, say "EditorScene: [what failed]" or "DungeonScene: [what failed]" in console.
+  - Never silently fail during placement, export, or scene switching.
+
+Deliverable summary for Phase 7:
+- Short final summary of the full workflow I can do now as a solo dev to build a dungeon from scratch.
+
+
+================================================================================
+END NOTES
+================================================================================
+
+> TL;DR of what I want when all phases are checked:
+> - I press F6 in my game and it opens a dev-only EditorScene with a grid and palette.
+> - I paint out a room like Minecraft (floors, walls, ramps, props, torches, spawn points).
+> - I save/export that room as JSON.
+> - I hit "Play This Layout" and I'm instantly IN that room as a playable dungeon:
+>     - My player is spawned at my chosen start.
+>     - I can move/attack/dodge, HUD works.
+>     - Walls/pillars block movement because colliders are built from my placed geometry.
+>     - Heat from torches / cool fill light is there.
+>     - The camera follows me, just like in HideoutScene.
+>     - I can spawn a test enemy in that space.
+> - I can go back to the editor, tweak, test again.
+> - The original HideoutScene, sliders, occluder fade, etc. all still work.
+
+This is the pipeline. Do not add or remove phases.
+Always start from the FIRST phase that is not checked off.
+Do not move on to the next phase unless the current phase is working, merged into main, and does not break HideoutScene.

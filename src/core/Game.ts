@@ -26,6 +26,9 @@ export class Game {
 
     this.engine = new Engine(canvas, true);
     this.sceneManager = new SceneManager(this.engine);
+    if (typeof window !== "undefined") {
+      (window as unknown as { __qaSceneManager?: SceneManager }).__qaSceneManager = this.sceneManager;
+    }
 
     // Attach mouse event listener to canvas after engine creation
     setTimeout(() => {

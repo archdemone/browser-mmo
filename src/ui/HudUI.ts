@@ -56,6 +56,8 @@ class HudUIImpl {
   private visualControlValues: Map<string, HTMLSpanElement> = new Map();
   private visualControlDefinitions: Map<string, VisualControlDefinition> = new Map();
   private visualControlChangeHandler: ((id: VisualControlId, value: number) => void) | null = null;
+  private gameplayHudContainer: HTMLDivElement | null = null;
+  private visualControlPanelVisible: boolean = true;
 
   init(): void {
     if (typeof document === "undefined") {
@@ -95,6 +97,7 @@ class HudUIImpl {
     topLeft.style.gap = "8px";
     topLeft.style.pointerEvents = "none";
     root.appendChild(topLeft);
+    this.gameplayHudContainer = topLeft;
 
     const hpContainer = this.createBarContainer("HP", "#c33232", "160px");
     topLeft.appendChild(hpContainer.container);
@@ -440,6 +443,30 @@ class HudUIImpl {
     }
   }
 
+  setGameplayHudVisible(visible: boolean): void {
+    const display = visible ? "flex" : "none";
+    if (this.gameplayHudContainer) {
+      this.gameplayHudContainer.style.display = display;
+    }
+    if (this.abilityBar) {
+      this.abilityBar.style.display = visible ? "flex" : "none";
+    }
+  }
+
+  setVisualControlPanelVisible(visible: boolean): void {
+    this.visualControlPanelVisible = visible;
+    if (!this.visualControlPanel) {
+      this.ensureVisualControlPanel();
+    }
+    if (this.visualControlPanel) {
+      this.visualControlPanel.style.display = visible ? "flex" : "none";
+    }
+  }
+
+  isVisualControlPanelVisible(): boolean {
+    return this.visualControlPanelVisible;
+  }
+
   getInvincibilityState(): boolean {
     return this.invincibilityCheckbox?.checked ?? false;
   }
@@ -569,6 +596,7 @@ class HudUIImpl {
     }
 
     const panel = document.createElement("div");
+    panel.id = "visual-control-panel";
     panel.style.position = "absolute";
     panel.style.top = "16px";
     panel.style.right = "16px";
@@ -579,11 +607,11 @@ class HudUIImpl {
     panel.style.border = "1px solid rgba(255, 255, 255, 0.15)";
     panel.style.borderRadius = "10px";
     panel.style.padding = "12px";
-    panel.style.display = "flex";
     panel.style.flexDirection = "column";
     panel.style.gap = "10px";
     panel.style.pointerEvents = "auto";
     panel.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.4)";
+    panel.style.display = this.visualControlPanelVisible ? "flex" : "none";
 
     const title = document.createElement("div");
     title.textContent = "Visual Controls";
@@ -674,6 +702,7 @@ class HudUIImpl {
     this.visualControlDefinitions.clear();
     this.visualControlChangeHandler = null;
     this.fxSliderValue = null;
+    this.gameplayHudContainer = null;
     this.init();
   }
 

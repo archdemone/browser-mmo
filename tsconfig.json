@@ -13,5 +13,5 @@
     "noEmit": true,
     "lib": ["DOM", "ESNext"]
   },
-  "include": ["src"]
+  "include": ["src", "tests", "playwright.config.ts"]
 }

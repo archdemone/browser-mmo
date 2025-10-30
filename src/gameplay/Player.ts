@@ -4,6 +4,7 @@ import type { Input } from "../core/Input";
 import { SaveService } from "../state/SaveService";
 import { createPlayerCharacter } from "../visuals/CharacterFactory";
 import { PlayerAnimator } from "../visuals/PlayerAnimator";
+import { DEBUG_EDITOR } from "../core/DebugFlags";
 
 export interface PlayerCollider {
   minX: number;
@@ -251,8 +252,13 @@ export class Player {
   }
 
   setInvincible(invincible: boolean): void {
+    if (this.isInvincible === invincible) {
+      return;
+    }
     this.isInvincible = invincible;
-    console.log(`[DEBUG] Player invincibility set to: ${invincible}`);
+    if (DEBUG_EDITOR) {
+      console.debug(`[Player] Invincibility set to: ${invincible}`);
+    }
   }
 
   consumeAttackTrigger(): boolean {
