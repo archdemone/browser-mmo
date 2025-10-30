@@ -111,6 +111,7 @@ export class DungeonScene implements SceneBase {
   private visualReady: boolean = false;
   private pendingVisualApply: boolean = false;
   private cameraReadyObserver: Nullable<Observer<Scene>> = null;
+  private cameraReadyObserverSource: "activeCamera" | "beforeRender" | null = null;
 
   constructor(sceneManager: SceneManager, layout?: PlacedEntity[]) {
     this.sceneManager = sceneManager;
@@ -471,7 +472,7 @@ export class DungeonScene implements SceneBase {
     }
 
     const scale = Number.isFinite(entity.scale) ? Math.max(0.1, entity.scale) : 1;
-    const radians = Scalar.DegreesToRadians(entity.rotY ?? 0);
+    const radians = (entity.rotY ?? 0) * (Math.PI / 180);
     const position = new Vector3(entity.pos.x, entity.pos.y, entity.pos.z);
     const name = `dungeon.entity.${entity.type}.${index}`;
 
@@ -904,20 +905,51 @@ export class DungeonScene implements SceneBase {
     if (this.cameraReadyObserver) {
       return;
     }
-    this.cameraReadyObserver = this.scene.onActiveCameraChangedObservable.add((scene) => {
-      if (!scene.activeCamera) {
-        return;
-      }
-      this.detachCameraReadyObserver();
-      this.applyCurrentVisualPreset();
-    });
+    const activeCameraObservable = this.scene.onActiveCameraChangedObservable;
+    if (activeCameraObservable && typeof activeCameraObservable.add === "function") {
+      this.cameraReadyObserverSource = "activeCamera";
+      this.cameraReadyObserver = activeCameraObservable.add((scene) => {
+        if (!scene.activeCamera) {
+          return;
+        }
+        this.detachCameraReadyObserver();
+        this.applyCurrentVisualPreset();
+      });
+      return;
+    }
+
+    const beforeRenderObservable = this.scene.onBeforeRenderObservable;
+    if (beforeRenderObservable && typeof beforeRenderObservable.add === "function") {
+      this.cameraReadyObserverSource = "beforeRender";
+      this.cameraReadyObserver = beforeRenderObservable.add(() => {
+        if (!this.scene || !this.scene.activeCamera) {
+          return;
+        }
+        this.detachCameraReadyObserver();
+        this.applyCurrentVisualPreset();
+      });
+      return;
+    }
+
+    console.warn(
+      "[DungeonScene] Camera readiness observables unavailable; applying visual preset immediately."
+    );
+    this.applyCurrentVisualPreset();
   }
 
   private detachCameraReadyObserver(): void {
-    if (this.scene && this.cameraReadyObserver) {
+    if (!this.scene || !this.cameraReadyObserver) {
+      this.cameraReadyObserver = null;
+      this.cameraReadyObserverSource = null;
+      return;
+    }
+    if (this.cameraReadyObserverSource === "activeCamera") {
       this.scene.onActiveCameraChangedObservable.remove(this.cameraReadyObserver);
+    } else if (this.cameraReadyObserverSource === "beforeRender") {
+      this.scene.onBeforeRenderObservable.remove(this.cameraReadyObserver);
     }
     this.cameraReadyObserver = null;
+    this.cameraReadyObserverSource = null;
   }
 
   private applyLightPreset(preset: LightPresetConfig | null | undefined, intensityScale: number): void {

@@ -415,6 +415,16 @@ export class EditorScene implements SceneBase {
     this.brushMaterials.clear();
     this.placementCounter = 0;
 
+    // Clean up all placement lights
+    for (const [placementId, light] of this.placementLights) {
+      try {
+        light.dispose();
+      } catch (error) {
+        console.warn(`[EditorScene] Failed to dispose light ${placementId}`, error);
+      }
+    }
+    this.placementLights.clear();
+
     this.disposePaletteUI();
     this.disposeFxPanelToggle();
 
@@ -1389,6 +1399,20 @@ export class EditorScene implements SceneBase {
           contributesTop: false,
           stackOffset: EPS,
         };
+      case "light_torch":
+        return {
+          halfHeight: LIGHT_TORCH_MARKER_HEIGHT / 2,
+          supportsSnap: true,
+          contributesTop: false,
+          stackOffset: EPS,
+        };
+      case "light_fill":
+        return {
+          halfHeight: LIGHT_FILL_MARKER_HEIGHT / 2,
+          supportsSnap: true,
+          contributesTop: false,
+          stackOffset: EPS,
+        };
       default:
         return {
           halfHeight: TILE_THICKNESS / 2,
@@ -1678,6 +1702,22 @@ export class EditorScene implements SceneBase {
         );
         break;
       }
+      case "light_torch": {
+        mesh = MeshBuilder.CreateCylinder(
+          name,
+          { height: LIGHT_TORCH_MARKER_HEIGHT, diameter: LIGHT_TORCH_MARKER_DIAMETER },
+          this.scene
+        );
+        break;
+      }
+      case "light_fill": {
+        mesh = MeshBuilder.CreateCylinder(
+          name,
+          { height: LIGHT_FILL_MARKER_HEIGHT, diameter: LIGHT_FILL_MARKER_DIAMETER },
+          this.scene
+        );
+        break;
+      }
       default:
         throw new Error(`Unsupported brush type: ${brushType}`);
     }
@@ -1721,6 +1761,10 @@ export class EditorScene implements SceneBase {
         return new Color3(0.8, 0.2, 0.2);
       case "player_spawn":
         return new Color3(0.25, 0.6, 0.8);
+      case "light_torch":
+        return new Color3(0.95, 0.58, 0.32);
+      case "light_fill":
+        return new Color3(0.52, 0.68, 0.95);
       default:
         return new Color3(0.6, 0.6, 0.6);
     }
@@ -1837,6 +1881,60 @@ export class EditorScene implements SceneBase {
     return null;
   }
 
+  private createPlacementLight(
+    placementId: string,
+    brushType: BrushType,
+    position: Vector3,
+    params?: LightParams
+  ): void {
+    if (!this.scene) {
+      return;
+    }
+
+    const lightParams = params || this.getDefaultLightParams(brushType);
+    if (!lightParams) {
+      console.warn(`[EditorScene] No light params for brush type: ${brushType}`);
+      return;
+    }
+
+    try {
+      const light = new PointLight(
+        `EditorLight_${placementId}`,
+        position.clone(),
+        this.scene
+      );
+
+      light.diffuse = new Color3(lightParams.color[0], lightParams.color[1], lightParams.color[2]);
+      light.intensity = lightParams.intensity;
+      light.range = lightParams.range;
+
+      // Adjust light position based on brush type
+      if (brushType === "light_torch") {
+        light.position.y += LIGHT_TORCH_LIGHT_OFFSET_Y;
+      } else if (brushType === "light_fill") {
+        light.position.y += LIGHT_FILL_LIGHT_HEIGHT;
+      }
+
+      this.placementLights.set(placementId, light);
+      console.log(`[EditorScene] Created ${brushType} light at`, light.position.toString());
+    } catch (error) {
+      console.warn(`[EditorScene] Failed to create light for ${brushType}`, error);
+    }
+  }
+
+  private removePlacementLight(placementId: string): void {
+    const light = this.placementLights.get(placementId);
+    if (light) {
+      try {
+        light.dispose();
+        this.placementLights.delete(placementId);
+        console.log(`[EditorScene] Removed light for placement ${placementId}`);
+      } catch (error) {
+        console.warn(`[EditorScene] Failed to dispose light for placement ${placementId}`, error);
+      }
+    }
+  }
+
   private buildLayoutFilename(): string {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     return `dungeon-layout-${timestamp}.json`;
@@ -1938,6 +2036,11 @@ export class EditorScene implements SceneBase {
       }
       this.placedEntities.push(record);
 
+      // Create PointLight for light brushes
+      if (context.brushType === "light_torch" || context.brushType === "light_fill") {
+        this.createPlacementLight(name, context.brushType, placement.position, record.params);
+      }
+
       if (placement.metrics.contributesTop) {
         this.registerTop(context.ix, context.iz, context.level, placement.topY);
       }
@@ -1981,6 +2084,8 @@ export class EditorScene implements SceneBase {
     this.undoStack = this.undoStack.filter((entry) => entry !== mesh);
     const metadata = this.getMeshMetadata(mesh);
     if (metadata?.placementId) {
+      // Clean up associated light if it exists
+      this.removePlacementLight(metadata.placementId);
       this.removePlacedEntity(metadata.placementId);
     } else if (
       metadata &&
