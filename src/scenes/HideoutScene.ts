@@ -1260,6 +1260,7 @@ export class HideoutScene implements SceneBase {
     this.player.setCollidersProvider(() => this.colliders);
 
     this.cameraRig = new CameraRig(this.scene, this.player.getMesh());
+    this.player.setCameraRig(this.cameraRig);
     this.cameraRig.update();
   }
 

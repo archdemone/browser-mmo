@@ -110,7 +110,7 @@ export class DungeonScene implements SceneBase {
   private readonly exitPortalDistanceSq: number = 4;
   private visualReady: boolean = false;
   private pendingVisualApply: boolean = false;
-  private cameraReadyObserver: Nullable<Observer<Scene>> = null;
+  private cameraReadyObserver: Nullable<Observer<any>> = null;
   private cameraReadyObserverSource: "activeCamera" | "beforeRender" | null = null;
 
   constructor(sceneManager: SceneManager, layout?: PlacedEntity[]) {
@@ -701,6 +701,7 @@ export class DungeonScene implements SceneBase {
     this.player.setCollidersProvider(() => this.colliders);
 
     this.cameraRig = new CameraRig(this.scene, this.player.getMesh());
+    this.player.setCameraRig(this.cameraRig);
     this.cameraRig.update();
     if (this.visualReady || this.pendingVisualApply) {
       this.applyCurrentVisualPreset();
@@ -905,11 +906,14 @@ export class DungeonScene implements SceneBase {
     if (this.cameraReadyObserver) {
       return;
     }
-    const activeCameraObservable = this.scene.onActiveCameraChangedObservable;
+    const sceneWithOptionalCameraObservable = this.scene as {
+      onActiveCameraChangedObservable?: import("babylonjs").Observable<import("babylonjs").Camera>;
+    };
+    const activeCameraObservable = sceneWithOptionalCameraObservable.onActiveCameraChangedObservable;
     if (activeCameraObservable && typeof activeCameraObservable.add === "function") {
       this.cameraReadyObserverSource = "activeCamera";
-      this.cameraReadyObserver = activeCameraObservable.add((scene) => {
-        if (!scene.activeCamera) {
+      this.cameraReadyObserver = activeCameraObservable.add((camera: import("babylonjs").Camera | null) => {
+        if (!camera && (!this.scene || !this.scene.activeCamera)) {
           return;
         }
         this.detachCameraReadyObserver();
@@ -944,7 +948,12 @@ export class DungeonScene implements SceneBase {
       return;
     }
     if (this.cameraReadyObserverSource === "activeCamera") {
-      this.scene.onActiveCameraChangedObservable.remove(this.cameraReadyObserver);
+      const sceneWithOptionalCameraObservable = this.scene as {
+        onActiveCameraChangedObservable?: import("babylonjs").Observable<import("babylonjs").Camera>;
+      };
+      sceneWithOptionalCameraObservable.onActiveCameraChangedObservable?.remove(
+        this.cameraReadyObserver as Observer<import("babylonjs").Camera>
+      );
     } else if (this.cameraReadyObserverSource === "beforeRender") {
       this.scene.onBeforeRenderObservable.remove(this.cameraReadyObserver);
     }
