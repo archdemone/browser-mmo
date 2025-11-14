@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "vite --open",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:status": "tsc -p tsconfig.tests.json && node build-tests/skills/tests/StatusSystem.test.js"
   },
   "dependencies": {
     "babylonjs": "^7.0.0",

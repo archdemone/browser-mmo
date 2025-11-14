@@ -22,6 +22,7 @@ import type { SceneManager } from "../core/SceneManager";
 import { HudUI, type HudState } from "../ui/HudUI";
 import { SaveService } from "../state/SaveService";
 import { Enemy } from "../gameplay/Enemy";
+import { createSkillLabPanel } from "../devtools/SkillLabManager";
 import { PostFXConfig } from "../visuals/PostFXConfig";
 import {
   VisualPresetManager,
@@ -315,6 +316,9 @@ export class HideoutScene implements SceneBase {
     });
     HudUI.setVisualControls(VisualPresetManager.getVisualControlDefinitions());
     this.syncVisualControlValues();
+
+    const skillLabPanel = createSkillLabPanel();
+    skillLabPanel.init({ attachTo: document.body });
 
     console.log("[QA] Hideout loaded");
   }

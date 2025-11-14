@@ -1,0 +1,46 @@
+{
+  "profiles": {
+    "early": {
+      "dummy": {
+        "formation": "single",
+        "count": 1,
+        "armor": 0,
+        "maxHealth": 300,
+        "moveSpeed": 0
+      },
+      "toggles": {
+        "infiniteMana": false,
+        "ignoreCooldowns": false,
+        "deterministic": false
+      }
+    },
+    "mapping": {
+      "dummy": {
+        "formation": "pack",
+        "count": 5,
+        "armor": 10,
+        "maxHealth": 800,
+        "moveSpeed": 1.5
+      },
+      "toggles": {
+        "infiniteMana": true,
+        "ignoreCooldowns": true,
+        "deterministic": false
+      }
+    },
+    "bossing": {
+      "dummy": {
+        "formation": "single",
+        "count": 1,
+        "armor": 35,
+        "maxHealth": 5000,
+        "moveSpeed": 0.5
+      },
+      "toggles": {
+        "infiniteMana": true,
+        "ignoreCooldowns": false,
+        "deterministic": true
+      }
+    }
+  }
+}

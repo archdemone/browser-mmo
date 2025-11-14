@@ -1,0 +1,422 @@
+SKILL LAB + WARRIOR SKILL PACK - DEVELOPMENT PIPELINE (PoE2-INSPIRED)
+Version: 2.0
+Author: ChatGPT (Codex edits)
+
+Goal: Ship a component-driven Skill Lab that mirrors Path of Exile 2 pacing, while delivering a Warrior launch kit. Designers can compose skills live, test on dummy scenarios, and export/import data. Supports, statuses, VFX, and movement all share a single data source so future archetypes plug straight into the same tooling.
+
+-------------------------------------------------------------------------------
+BIG PICTURE SUMMARY
+-------------------------------------------------------------------------------
+- Outcome: Fully data-driven skills with a live in-game editor (Skill Lab). Designers can create, duplicate, reorder, and tune skill components (geometry, motion, timing, damage, status, VFX) and test immediately against spawnable dummy sets. Warrior presets (Heavy Strike, Cleave, Ground Slam, Sweep, Leap Slam, Shield Charge, Lunge) arrive as tuned examples.
+- Inspiration: Path of Exile 2 cadence; high-APM mapping potential but clear, dodgeable early game. Tag-first approach keeps the future support gem system trivial.
+- Keys:
+  - Component-based SkillData schema with motion limits, dedup pools, and VFX overrides.
+  - Immutable support overlay producing DerivedSkills; editor shows live diffs, base data stays untouched until commit.
+  - MovementAPI covers dash/leap/lunge actions; executor schedules components in order and runs on a fixed-tick sim when requested.
+  - QA harness with deterministic toggle, DPS/TTK metrics, and export/import validation keeps "done" objective.
+
+Non-Goals (this pipeline):
+- No bespoke character animation layering beyond basic triggers.
+- No netcode or multiplayer sync.
+- No final art/audio production; VFX are procedural.
+- No passive tree or ascendancy systems (only unlock GUI scaffolding).
+
+Quality Bars (global):
+- Smooth feel: no micro-teleporting, movement components respect collisions.
+- Deterministic hits: gizmos match actual overlap tests; fixed-tick option available.
+- Autosave drafts every 2s; commit workflow writes explicitly; undo stack (20 steps) never corrupts data.
+- Instrumentation: rolling DPS/TTK, hit counts, status uptime, AoE coverage approximations, with reset hooks.
+
+-------------------------------------------------------------------------------
+PHASE 1 [X] - FOUNDATIONS & SCHEMAS (DATA-FIRST)
+-------------------------------------------------------------------------------
+Objective: Establish component-based schemas, registries, and persistence pipeline so every system reads the same source of truth.
+
+Tasks:
+1.1 Define schemas (TypeScript)
+    - SkillData (v1.1) and SkillComponent typed as:
+      type SkillData = {
+        schemaVersion: "1.1";
+        id: string;
+        name: string;
+        levelReq: number;
+        tags: string[];
+        baseKind: "weapon" | "spell";
+        baseMult: number;
+        cost: number;
+        cooldown: number;
+        components: SkillComponent[];
+        statusDefaults?: StatusDefaults;
+        vfxDefaults?: VfxDefaults;
+        editor?: { iconPath?: string; color?: string; notes?: string };
+      };
+
+      type SkillComponent = {
+        id: string;
+        timing: {
+          start: number;
+          duration?: number;
+          tickRate?: number;
+        };
+        shape?:
+          | { type: "circle"; radius: number }
+          | { type: "cone"; angle: number; range: number }
+          | { type: "line"; length: number; width: number }
+          | { type: "projectile"; speed: number; lifetime: number; count: number; pierce?: number; chain?: number; pattern?: "straight" | "spread" | "return" }
+          | { type: "ring"; inner: number; outer: number; expandRate?: number }
+          | { type: "custom"; ref: string }; // omit for movement-only components
+        motion?: {
+          kind: "none" | "followCaster" | "followTarget" | "arc" | "dash";
+          params?: Record<string, number>;
+        }; // provide motion for movement-only components or moving hit volumes
+        limits?: {
+          maxTargets?: number;
+          perTargetCooldownMs?: number;
+          groupId?: string;
+        };
+        status?: Partial<StatusDefaults>;
+        vfxOverrides?: Partial<VfxDefaults>;
+        damage?: {
+          baseMult?: number;
+          addedFlat?: number;
+          critOverride?: number;
+        };
+      };
+
+      type MovementAction =
+        | { type: "dash"; distance: number; speed: number; stopOnCollision: boolean; targeting: "forward" | "cursor" | "target" }
+        | { type: "leap"; distance: number; airtime: number; allowPassThrough: boolean; targeting: "cursor" | "target" }
+        | { type: "lunge"; maxDistance: number; speed: number; stickToTarget: boolean }
+        | { type: "custom"; ref: string; params?: Record<string, unknown> };
+
+      type StatusDefaults = {
+        bleed?: { pctOverTime: number; dur: number; stacksMax: number };
+        shred?: { drPctPerStack: number; dur: number; stacksMax: number };
+        stun?: { chance: number; dur: number };
+        knockback?: { meters: number; immunityMs?: number };
+      };
+
+      type VfxDefaults = {
+        palette?: string;
+        trail?: { width: number; duration: number };
+        impact?: { type: "circle" | "line" | "burst"; size: number; color?: string };
+        particles?: { count: number; size: number; lifetime: number };
+        screenShake?: { amplitude: number; duration: number };
+        // global time-dilation toggle lives in editor, not schema.
+      };
+
+1.2 Migration harness
+    - Add schemaVersion to persistence; create migration stub (v1.0 -> v1.1) converting single shape fields into component arrays.
+
+1.3 Support operation phases
+    - Define SupportOp as { target: string; op: "multiply" | "add" | "clampMin" | "clampMax" | "set" | "push"; value: unknown; phase: "pre" | "main" | "post" }.
+    - Implement immutable applySupports(baseSkill, supports[]) returning DerivedSkill with canonical order: pre -> main -> post -> penalties.
+
+1.4 Registries
+    - skills.registry.ts: load warrior presets with components, placeholders for future archetypes.
+    - supports.registry.ts: seed IncreasedAreaSupport, MoreMeleeSupport.
+    - statuses.config.ts: default tuning per status type.
+
+1.5 Persistence utilities
+    - Autosave drafts (localStorage namespace skillLab.drafts.v1).
+    - Commit writes to runtime profile JSON (skillLab.commits.v1); provide guarded "Write to source" flow for deliberate preset updates.
+    - Import/Export JSON with schema validation.
+
+Deliverables:
+- /src/skills/skills.schema.ts
+- /src/skills/migrations/v1_0_to_v1_1.ts
+- /src/skills/skills.registry.ts
+- /src/supports/supports.registry.ts
+- /src/utils/persistence.ts
+
+Acceptance tests:
+- Schema validation passes for warrior presets.
+- Migration converts v1.0 sample data to v1.1 components.
+- applySupports does not mutate base skill and respects phase ordering.
+- Autosave/commit round trip preserves data integrity.
+
+-------------------------------------------------------------------------------
+PHASE 2 [X] - EXECUTOR, GEOMETRY, MOVEMENT, METRICS
+-------------------------------------------------------------------------------
+Objective: Build a deterministic SkillExecutor that schedules components, drives MovementAPI, resolves hits, and feeds the metric pipeline.
+
+Tasks:
+2.1 Component scheduler
+    - Sort components by timing.start; queue tick events for duration/tickRate; emit execution events.
+
+2.2 Hit geometry utilities
+    - spawnCircle, spawnCone, spawnLine, spawnRing, spawnProjectile; each exposes drawGizmo(ctx) and overlapTest(entity, dt).
+    - Support limits.maxTargets and groupId dedupe.
+
+2.3 MovementAPI
+    - Implement dash/leap/lunge handlers honoring targeting rules and collisions (swept tests, stopOnCollision).
+    - Provide callbacks (onStart, onLand, onCancel) for executor.
+
+2.4 Fixed-tick simulation
+    - Add toggle to run executor under deterministic fixed timestep (default 60Hz) with seedable RNG.
+    - Ensure movement and hit resolution align between variable and fixed modes.
+
+2.5 Damage model
+    - Introduce armor mitigation (simple physical DR curve) and crit chance/damage defaults.
+    - Emit HitEvent with hooks for StatusSystem and metric logging.
+    - Define preHit -> onHit -> postHit hooks so statuses, lifesteal, on-kill, etc. plug in without touching executor internals.
+
+2.6 Metric pipeline
+    - Rolling DPS window (last 5 seconds) and TTK (average of last N dummy kills).
+    - Reset hooks (manual and on skill change).
+    - Persist recent logs for editor panel.
+
+Deliverables:
+- /src/skills/SkillExecutor.ts
+- /src/skills/HitGeometry.ts
+- /src/skills/MovementAPI.ts
+- /src/metrics/SkillMetrics.ts
+
+Acceptance tests:
+- Each shape hits stationary and moving dummies; gizmo overlays match actual hits.
+- Movement actions respect collisions and targeting; leap lands near cursor, dash stops on wall, lunge tracks target.
+- Fixed-tick mode reproduces results across repeated casts (checksum logs match).
+- Hit dedup ledger key = (castId, targetId, groupId); ledger resets per cast and never suppresses later casts.
+- Armor/crit hooks modify damage as expected (unit tests or scripted harness).
+- Metrics update correctly after resets and during spam.
+
+-------------------------------------------------------------------------------
+PHASE 3 [X] - STATUS & COMBAT EFFECTS
+-------------------------------------------------------------------------------
+Objective: Deliver shared combat effects with policy tables, collision-safe knockback, and editor metrics.
+
+Tasks:
+3.1 StatusSystem.ts
+    - applyStatus, tickStatus, removeStatus.
+    - Policy table: defines stacking (add/refresh/extend) per status; include unit tests.
+
+3.2 Bleed
+    - DOT tied to lastHitDamageFactor or flat override; obey stacksMax.
+
+3.3 Shred
+    - Apply drPctPerStack capped (configurable), decays per policy.
+
+3.4 Stun
+    - Interrupt actions; break on damage threshold; expose immunity windows.
+
+3.5 Knockback
+    - Implement swept collision, minimum travel, immunity window to prevent ping-pong.
+
+Deliverables:
+- /src/skills/StatusSystem.ts
+- /src/skills/tests/StatusSystem.test.ts
+- /src/config/StatusTuning.ts
+
+Acceptance tests:
+- Policy unit tests pass for stack/refresh cases.
+- Knockback handles multiple enemies and walls without tunneling.
+- Status metrics feed into SkillMetrics (uptime, stacks).
+
+-------------------------------------------------------------------------------
+PHASE 4 [X] - VFX & IMPACT FEEL
+-------------------------------------------------------------------------------
+Objective: Provide procedural VFX primitives with component overrides, while keeping TimeDilation as a global testing toggle.
+
+Tasks:
+4.1 Palette & style guide (steel, dust, sparks for physical).
+
+4.2 VFX primitives
+    - ImpactDecal, ParticleBurst, TrailRenderer, ShockwaveRing, ScreenShake.
+
+4.3 Bindings
+    - SkillData.vfxDefaults apply first; component.vfxOverrides override.
+    - Effective VFX value = skill defaults -> component override -> live tweak; tooltips show the active source.
+    - TimeDilation global toggle only (no per skill flag).
+
+Deliverables:
+- /src/vfx/VfxPrimitives.ts
+- /src/vfx/Palettes.ts
+- /src/vfx/VfxBindings.ts
+
+Acceptance tests:
+- Editing VFX values in editor updates next cast.
+- Camera shake obeys global enable/disable.
+- Component overrides correctly replace defaults (visual regression test).
+- Tooltips report VFX source (skill default vs component override vs live tweak).
+
+-------------------------------------------------------------------------------
+PHASE 5 [X] - SKILL LAB EDITOR (IN-GAME UI)
+-------------------------------------------------------------------------------
+Objective: Build an inspector-driven editor with draft/commit workflow, undo stack, component management, and A/B comparisons.
+
+UI Layout:
+- Left column: Skill list (search + tag filters), components expand inline, New/Duplicate/Delete/Reset buttons.
+- Middle column: Inspector sections (Meta, Tags, Costs/Timing, Components array, Status overrides, VFX, Supports panel, Metrics readout).
+- Right column: Sandbox (dummy spawner, test toggles, metrics charts, A/B compare, export/import).
+
+Tasks:
+5.1 Component editor
+    - Drag reorder, duplicate, delete components.
+    - Shape-specific editors; motion params when relevant.
+
+5.2 Draft vs commit
+    - Draft autosave every 2s; commit writes to runtime profile (guarded source write optional); maintain 20-step undo/redo within draft context.
+
+5.3 A/B compare
+    - Maintain two presets per skill (A vs B) with quick swap and diff overlay.
+
+5.4 Supports UI
+    - Checklist of supports; display op stack trace ("radius *1.2 -> clamp 7m").
+
+5.5 Unlock tester
+    - Simulate level threshold; show choice panel; bind to key bar.
+
+5.6 Low-visibility toggle
+    - Hide heavy trails/particles/gizmos while tuning to keep perf stable; sticky per session.
+
+Deliverables:
+- /src/devtools/SkillLabPanel.tsx
+- /src/devtools/hooks/useSkillDraft.ts
+- /src/devtools/components/ComponentEditor.tsx
+- /src/devtools/DummySpawner.ts
+- /src/ui/KeybindBar.tsx
+- /src/ui/ChoicePanel.tsx
+
+Acceptance tests:
+- Inspector edits reflect on next cast (both live and derived skill).
+- Undo/redo works for component reorder, value edits, support toggles.
+- Commit writes persist across reloads; drafts remain isolated until commit.
+- A/B compare toggles between stored presets without data loss.
+
+-------------------------------------------------------------------------------
+PHASE 6 [X] - SUPPORT GEM SYSTEM (MVP)
+-------------------------------------------------------------------------------
+Objective: Validate support pipeline with two initial supports and visualization of the op stack.
+
+Tasks:
+6.1 Support engine
+    - validateSupport(skill.tags) -> boolean + reason when invalid.
+    - applySupports(baseSkill, selectedSupports) -> DerivedSkill.
+    - Enforce canonical phase order: pre -> main -> post -> penalties when applying ops.
+    - Record op trace for UI presentation.
+
+6.2 Initial supports
+    - Increased Area (requires "aoe"): pre-phase radius/angle/length/width * 1.2, post-phase clampMax radius/length 7m, cost penalty +10%.
+    - More Melee Damage (requires "melee"): main-phase baseMult * 1.3, post-phase cooldown += 10%.
+
+6.3 Editor integration
+    - Supports panel displays chips with summary and op trace.
+    - Export/import includes selected supports (stored separately from base skill).
+
+Deliverables:
+- /src/supports/SupportEngine.ts
+- /src/supports/supports.registry.ts (updated entries)
+- /src/devtools/components/SupportsPanel.tsx
+
+Acceptance tests:
+- Invalid supports show disabled state with tooltip reason.
+- Op trace UI matches actual modified values in derived skill.
+- Export/import round-trip retains support selections.
+
+-------------------------------------------------------------------------------
+PHASE 7 [X] - WARRIOR PRESETS, UNLOCKS, QA
+-------------------------------------------------------------------------------
+Objective: Ship the Warrior kit using the component model, finalize unlock flow, and complete QA checklist.
+
+Tasks:
+7.1 Author warrior SkillData entries (ids prefixed "warrior."; tags include "warrior", "physical", and relevant motion tags).
+    - Heavy Strike: line hit (length 3.5m, width 1.6m, start 0.28s), cooldown 0.8s, cost 9, baseMult 1.45, status overrides { stunChance: 0.25, stunDuration: 0.7, knockbackDistance: 2.0, knockbackImmunityMs: 300 }.
+    - Cleave: cone 80 deg / 4.5m, start 0.32s, baseMult 1.2, cost 11, perTargetCooldownMs 400, status overrides { shredStacks: 1, shredDuration: 3.0, maxStacks: 3 }.
+    - Ground Slam: component A delayed circle (start 0.45s, radius 3.8m, baseMult 1.35, status { stunChance: 0.2, slowPct: 0.25 }), component B expanding ring (start 0.75s, inner 3.8, outer 5.8, expandRate 12, baseMult 1.1, status { knockbackDistance: 2.5, armorShredStacks: 1 }); cooldown 4s, cost 18.
+    - Sweep: circle radius 3.4m, duration 1.2s, tickRate 20, perTargetCooldownMs 200, baseMult 0.45 per tick, status overrides { bleedScalar: 1.0, bleedDuration: 4.0, bleedMaxStacks: 3 }; cost 14, cooldown 3s.
+    - Leap Slam: MovementAction leap (distance 12m, airtime 0.65s, allowPassThrough false, invulnWindowMs 450), landing circle radius 3.8m start on landing, baseMult 1.2, status { stunChance: 0.2 }; cooldown 6s, cost 14.
+    - Shield Charge: MovementAction dash (distance 10m, speed 16, stopOnCollision true), trailing line impact (length 6m, width 2m, tickRate 30, duration 0.4s) applying status { knockbackDistance: 1.8, guardAbsorbPct: 0.25 for 0.4s }; cooldown 8s, cost 12.
+    - Lunge: MovementAction lunge (maxDistance 8m, speed 18, stickToTarget true), follow-up circle radius 2.8m (start 0.05s post-contact) baseMult 1.35, status { bleedScalar: 1.2 }, perTargetCooldownMs 300; cooldown 5s, cost 10.
+
+7.2 Unlock flow & keybinds
+    - Encode unlock requirements in defaults.json and KeybindBar presets: level 1 Heavy Strike, 5 Cleave, 10 Ground Slam, 15 Sweep, 20 Leap Slam, 25 Shield Charge vs Lunge fork.
+    - Choice panel: present Shield Charge vs Lunge at simulated level >= 25, include preview metrics (DPS, travel time) and apply selected skill to runtime profile.
+    - Update autoslot logic to respect player overrides and avoid overwriting committed keybinds on unlock.
+
+7.3 Profiles & persistence
+    - Define profiles Early Game (single dummy, low armor), Mapping (5 dummy pack density, medium armor), Bossing (single, high armor, fixedTick true).
+    - Persist profile selection, sandbox toggles, and warrior skill IDs in defaults.json export/import path; add versioned migration for older saves.
+    - Ensure profile switch triggers DummySpawner + SkillMetrics refresh without resetting drafts.
+
+7.4 QA checklist & automation
+    - Author /docs/QA/WarriorKitChecklist.md with per-skill geometry, status, support, and perf sign-off tables plus reproduction steps.
+    - Extend QA harness script (scripts/qa/runWarriorSuite.ts) to spawn profile-specific scenarios, record DPS/TTK/stacks, and emit JSON for report attachment.
+    - Visual validation: generate gizmo overlay captures for each skill (editor export) and link in checklist.
+
+7.5 Launch readiness gates
+    - Conduct warrior kit playtest (design + engineering + QA) and log findings; all blocking issues resolved before marking final.
+    - Lock schema/tag names; any further warrior changes go through change request.
+    - Final export bundle reviewed (skills, supports selection, profiles) and handed to build/release.
+
+Deliverables:
+- Warrior entries in /src/skills/skills.registry.ts with full component specs (ids, tags, motion, limits).
+- Preset data in /src/skills/presets/warrior/*.json (or equivalent) referenced by registry.
+- /src/config/defaults.json updated with unlock, keybind, and profile defaults plus migration bump.
+- /scripts/qa/runWarriorSuite.ts (new) and QA harness updates.
+- /docs/QA/WarriorKitChecklist.md filled template ready for sign-off.
+
+Acceptance tests:
+- Casting each warrior skill in QA harness matches expected geometry/status behavior (Heavy Strike stun/knockback values, Cleave shred stacks, Sweep bleed tick cadence, movement skills respecting collisions/invuln).
+- Supports (Increased Area, More Melee Damage) apply correctly to warrior skills; op trace matches derived values and QA script snapshots.
+- Unlock simulation from level 1 -> 30 surfaces gating and preserves player keybind overrides across commits/reloads.
+- Profile switching updates DummySpawner metrics within one tick and persists selection across reload/export/import.
+- npm run qa:warrior produces report JSON + filled checklist with all required attachments.
+
+-------------------------------------------------------------------------------
+IMMEDIATE FOLLOW-UPS
+-------------------------------------------------------------------------------
+- Design review: walk Warrior tuning table with design lead, validate per-skill damage/cost/cooldowns against baselines, and sign off on tag/motion naming before implementation begins.
+- Implementation scheduling: break out tasks for QA harness script, defaults migration, and profile refresh hooks into sprint board (owner + estimate), ensuring dependencies (Schema bump, DummySpawner hooks) are captured.
+
+-------------------------------------------------------------------------------
+APPENDIX A - DEFAULT BASELINES
+-------------------------------------------------------------------------------
+- Ranges: melee 3.0m; small AoE 4.5m; large AoE 6.5m; cone 75 deg;  line 6m x 2m.
+- Pacing: basic cooldown 0.7s; mid cooldown 3-5s; mobility 6-8s.
+- Costs: basic 8-10 mana; mid 15-20; mobility 12-15.
+- Status: bleed = 80-120% over 4s (max 3 stacks); shred = -10% DR per stack (3 stacks, 3s); stun = 25% chance, 0.6-0.9s; knockback = 1.5-2.5m with 300ms immunity.
+- Metrics: default rolling windows DPS 5s, TTK average last 3 kills.
+
+-------------------------------------------------------------------------------
+APPENDIX B - FILE MAP (SUGGESTED)
+-------------------------------------------------------------------------------
+/src/skills/skills.schema.ts
+/src/skills/migrations/v1_0_to_v1_1.ts
+/src/skills/skills.registry.ts
+/src/supports/supports.registry.ts
+/src/supports/SupportEngine.ts
+/src/skills/SkillExecutor.ts
+/src/skills/HitGeometry.ts
+/src/skills/MovementAPI.ts
+/src/skills/StatusSystem.ts
+/src/metrics/SkillMetrics.ts
+/src/devtools/SkillLabPanel.tsx
+/src/devtools/hooks/useSkillDraft.ts
+/src/devtools/components/ComponentEditor.tsx
+/src/devtools/components/SupportsPanel.tsx
+/src/devtools/DummySpawner.ts
+/src/ui/KeybindBar.tsx
+/src/ui/ChoicePanel.tsx
+/src/vfx/VfxPrimitives.ts
+/src/vfx/Palettes.ts
+/src/vfx/VfxBindings.ts
+/src/config/StatusTuning.ts
+/src/config/defaults.json
+/docs/QA/WarriorKitChecklist.md
+
+-------------------------------------------------------------------------------
+NOTES ON ADDITIONS
+-------------------------------------------------------------------------------
+- Componentized SkillData (prevents schema hacks for multi-stage skills and movement).
+- MovementAPI (centralized handling, reusable tests).
+- Immutable supports overlay with op ordering (editor safety + predictable math).
+- Fixed-tick deterministic switch (reproducible QA runs).
+- Metric pipeline wired from the start (DPS/TTK credibility for designers).
+- Draft/commit workflow with undo + A/B compare (safe iteration).
+
+END OF DOCUMENT
+
+
+
+
+

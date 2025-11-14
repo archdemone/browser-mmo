@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.1",
+  "id": "warrior-heavy-strike",
+  "name": "Heavy Strike",
+  "levelReq": 1,
+  "tags": ["melee","physical","single","strike","stun","knockback"],
+  "baseKind": "weapon",
+  "baseMult": 1.0,
+  "cost": 8,
+  "cooldown": 0.7,
+  "components": [
+    {
+      "id": "heavy-impact",
+      "timing": { "start": 0 },
+      "shape": { "type": "circle", "radius": 1.6 },
+      "limits": { "maxTargets": 1 },
+      "damage": { "baseMult": 1.3 },
+      "status": {
+        "stun": { "chance": 0.25, "dur": 0.7 },
+        "knockback": { "meters": 1.5 }
+      },
+      "vfxOverrides": {
+        "impact": { "type": "burst", "size": 2.5 },
+        "screenShake": { "amplitude": 0.8, "duration": 0.12 }
+      }
+    }
+  ]
+}
