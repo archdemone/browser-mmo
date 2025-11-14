@@ -10,6 +10,13 @@ interface PlayerAnimatorClips {
   attack?: AnimationGroup | null;
 }
 
+export interface LocomotionUpdate {
+  speed: number;
+  normalizedSpeed: number;
+  sprinting: boolean;
+  deltaTime?: number;
+}
+
 /**
  * Controls the player's character animation blending between locomotion states and one-shot actions.
  */
@@ -22,6 +29,12 @@ export class PlayerAnimator {
   private currentLocomotion: LocomotionState = "idle";
   private lastLocomotionRequest: LocomotionState | null = null;
   private debugLoggingActive: boolean = false;
+  private readonly locomotionClips: Record<LocomotionState, AnimationGroup | null>;
+  private blendSource: AnimationGroup | null = null;
+  private blendTarget: AnimationGroup | null = null;
+  private blendElapsed: number = 0;
+  private readonly blendDuration: number = 0.18;
+  private lastNormalizedSpeed: number = 0;
 
   constructor(clips: PlayerAnimatorClips) {
     this.clips = clips;
@@ -31,28 +44,143 @@ export class PlayerAnimator {
     this.configureOneShot(this.clips.dodge ?? null);
     this.configureOneShot(this.clips.attack ?? null);
 
-    this.playLocomotionClip("idle");
+    this.locomotionClips = {
+      idle: this.clips.idle ?? null,
+      run: this.clips.run ?? null,
+      sprint: this.clips.sprint ?? null,
+    };
+
+    this.forceLocomotionState("idle");
   }
 
   /**
    * Updates locomotion animations based on movement speed and sprinting flag.
    */
-  updateLocomotion(moveSpeed: number, sprinting: boolean): void {
-    const speedThreshold = 0.1;
-    let target: LocomotionState = "idle";
-
-    if (moveSpeed > speedThreshold) {
-      target = sprinting ? "sprint" : "run";
-    }
+  updateLocomotion(params: LocomotionUpdate): void {
+    const { normalizedSpeed, sprinting, deltaTime = 0 } = params;
+    const target = this.selectLocomotionState(normalizedSpeed, sprinting);
 
     this.desiredLocomotion = target;
     this.logLocomotionRequest(target);
 
-    if (this.activeOneShot) {
+    if (!this.activeOneShot && (this.currentLocomotion !== target || !this.activeLoop)) {
+      this.beginLocomotionBlend(target);
+    }
+
+    this.applyLocomotionBlend(deltaTime);
+
+    if (this.activeLoop) {
+      if (this.currentLocomotion === "idle") {
+        this.activeLoop.weight = 1;
+        this.activeLoop.speedRatio = 1;
+      } else {
+        const ratio = 0.6 + Math.min(1, Math.max(0, normalizedSpeed)) * 0.6;
+        this.activeLoop.speedRatio = ratio;
+      }
+    }
+
+    this.lastNormalizedSpeed = normalizedSpeed;
+  }
+
+  private selectLocomotionState(normalizedSpeed: number, sprinting: boolean): LocomotionState {
+    if (normalizedSpeed < 0.1) {
+      return "idle";
+    }
+
+    if (sprinting && (this.locomotionClips.sprint ?? null)) {
+      return "sprint";
+    }
+
+    return "run";
+  }
+
+  private beginLocomotionBlend(state: LocomotionState): void {
+    const targetClip = this.resolveLocomotionClip(state);
+    const previous = this.activeLoop;
+
+    if (!targetClip) {
+      this.stopActiveLoop();
+      this.currentLocomotion = state;
       return;
     }
 
-    this.playLocomotionClip(target);
+    if (targetClip === previous) {
+      this.blendSource = null;
+      this.blendTarget = null;
+      this.blendElapsed = 0;
+      this.currentLocomotion = state;
+      if (!targetClip.isPlaying) {
+        targetClip.start(true);
+      }
+      targetClip.weight = 1;
+      this.activeLoop = targetClip;
+      return;
+    }
+
+    targetClip.reset();
+    targetClip.start(true);
+    targetClip.weight = 0;
+
+    if (previous && previous !== targetClip) {
+      previous.weight = 1;
+    }
+
+    this.blendSource = previous && previous !== targetClip ? previous : null;
+    this.blendTarget = targetClip;
+    this.blendElapsed = 0;
+    this.currentLocomotion = state;
+    this.activeLoop = targetClip;
+  }
+
+  private applyLocomotionBlend(deltaTime: number): void {
+    if (this.blendTarget) {
+      this.blendElapsed += deltaTime;
+      const duration = Math.max(0.01, this.blendDuration);
+      const t = Math.min(1, this.blendElapsed / duration);
+
+      if (this.blendSource && this.blendSource !== this.blendTarget) {
+        this.blendSource.weight = 1 - t;
+      }
+
+      this.blendTarget.weight = t;
+
+      if (t >= 1) {
+        if (this.blendSource && this.blendSource !== this.blendTarget) {
+          this.blendSource.stop();
+          this.blendSource.weight = 0;
+        }
+        this.blendSource = null;
+        this.blendTarget = null;
+        this.blendElapsed = 0;
+        if (this.activeLoop) {
+          this.activeLoop.weight = 1;
+        }
+      }
+      return;
+    }
+
+    if (this.activeLoop) {
+      if (!this.activeLoop.isPlaying) {
+        this.activeLoop.start(true);
+      }
+      this.activeLoop.weight = 1;
+    }
+  }
+
+  private forceLocomotionState(state: LocomotionState): void {
+    const clip = this.resolveLocomotionClip(state);
+    this.stopActiveLoop();
+    if (clip) {
+      clip.reset();
+      clip.start(true);
+      clip.weight = 1;
+    }
+    this.activeLoop = clip ?? null;
+    this.currentLocomotion = state;
+    this.desiredLocomotion = state;
+    this.blendSource = null;
+    this.blendTarget = null;
+    this.blendElapsed = 0;
   }
 
   /**
@@ -123,7 +251,7 @@ export class PlayerAnimator {
     }
 
     this.stopActiveOneShot();
-    this.playLocomotionClip(this.desiredLocomotion);
+    this.forceLocomotionState(this.desiredLocomotion);
   }
 
   getAttackDuration(): number {
@@ -138,6 +266,8 @@ export class PlayerAnimator {
     group.loopAnimation = true;
     group.stop();
     group.reset();
+    group.weight = 0;
+    group.speedRatio = 1;
   }
 
   private configureOneShot(group: AnimationGroup | null): void {
@@ -148,39 +278,6 @@ export class PlayerAnimator {
     group.loopAnimation = false;
     group.stop();
     group.reset();
-  }
-
-  private playLocomotionClip(state: LocomotionState): void {
-    const clip = this.resolveLocomotionClip(state);
-
-    if (this.activeLoop === clip) {
-      if (clip && !clip.isPlaying) {
-        clip.start(true);
-      }
-      this.currentLocomotion = state;
-      if (this.debugLoggingActive) {
-        console.log(
-          `[DBG] locomotion state=${state} group=${clip?.name ?? "none"} loop=${clip?.loopAnimation ?? false}`
-        );
-      }
-      return;
-    }
-
-    this.stopActiveLoop();
-
-    if (clip) {
-      clip.reset();
-      clip.start(true);
-    }
-
-    this.activeLoop = clip;
-    this.currentLocomotion = state;
-
-    if (this.debugLoggingActive) {
-      console.log(
-        `[DBG] locomotion state=${state} group=${clip?.name ?? "none"} loop=${clip?.loopAnimation ?? false}`
-      );
-    }
   }
 
   private resolveLocomotionClip(state: LocomotionState): AnimationGroup | null {
@@ -221,7 +318,7 @@ export class PlayerAnimator {
       if (this.debugLoggingActive) {
         console.log(`[DBG] dodge end group=${group.name}`);
       }
-      this.playLocomotionClip(this.desiredLocomotion);
+      this.forceLocomotionState(this.desiredLocomotion);
     });
   }
 
@@ -316,12 +413,25 @@ export class PlayerAnimator {
   }
 
   private stopActiveLoop(): void {
-    if (!this.activeLoop) {
-      return;
+    if (this.activeLoop) {
+      this.activeLoop.stop();
+      this.activeLoop.weight = 0;
     }
 
-    this.activeLoop.stop();
+    if (this.blendSource && this.blendSource !== this.activeLoop) {
+      this.blendSource.stop();
+      this.blendSource.weight = 0;
+    }
+
+    if (this.blendTarget && this.blendTarget !== this.activeLoop) {
+      this.blendTarget.stop();
+      this.blendTarget.weight = 0;
+    }
+
     this.activeLoop = null;
+    this.blendSource = null;
+    this.blendTarget = null;
+    this.blendElapsed = 0;
   }
 
   private stopActiveOneShot(): void {

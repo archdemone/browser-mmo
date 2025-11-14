@@ -69,9 +69,9 @@ export class Enemy {
       const { rootMesh, animator, attackDuration } = pooledVisual;
       Enemy.resetVisual(rootMesh, spawnPos);
       animator?.cancelAttack();
-      animator?.updateLocomotion(0, false);
+      animator?.updateLocomotion({ speed: 0, normalizedSpeed: 0, sprinting: false });
       animator?.cancelAttack();
-      animator?.updateLocomotion(0, false);
+      animator?.updateLocomotion({ speed: 0, normalizedSpeed: 0, sprinting: false });
       const enemy = new Enemy(scene, rootMesh, animator, spawnPos, attackDuration, pooledVisual);
       enemy.resetStateMachine();
       return enemy;
@@ -206,7 +206,8 @@ export class Enemy {
       }
     }
 
-    this.animator?.updateLocomotion(speed, false);
+    const normalizedSpeed = this.moveSpeed > 0 ? Math.min(1, speed / this.moveSpeed) : 0;
+    this.animator?.updateLocomotion({ speed, normalizedSpeed, sprinting: false, deltaTime });
   }
 
   applyDamage(amount: number): void {
@@ -323,7 +324,7 @@ export class Enemy {
     }
 
     this.animator?.cancelAttack();
-    this.animator?.updateLocomotion(0, false);
+    this.animator?.updateLocomotion({ speed: 0, normalizedSpeed: 0, sprinting: false });
 
     this.mesh.setEnabled(false);
     this.mesh.position.setAll(0);

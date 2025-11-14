@@ -5,6 +5,7 @@ import { SaveService } from "../state/SaveService";
 import { createPlayerCharacter } from "../visuals/CharacterFactory";
 import { PlayerAnimator } from "../visuals/PlayerAnimator";
 import { DEBUG_EDITOR } from "../core/DebugFlags";
+import type { CameraRig } from "../visuals/CameraRig";
 
 export interface PlayerCollider {
   minX: number;
@@ -20,8 +21,17 @@ export class Player {
   private readonly mesh: TransformNode;
   private readonly animator: PlayerAnimator;
   readonly input: Input;
-  private readonly walkSpeed: number;
+  private readonly moveVelocity: Vector3;
+  private readonly targetVelocity: Vector3;
+  private readonly desiredDirection: Vector3;
+  private readonly frameDisplacement: Vector3;
+  private readonly fallbackForward: Vector3;
+  private readonly fallbackRight: Vector3;
+  private readonly moveSpeed: number;
   private readonly sprintSpeed: number;
+  private readonly accel: number;
+  private readonly decel: number;
+  private readonly faceTurnSpeed: number;
   private readonly dodgeSpeed: number;
   private readonly dodgeDuration: number;
   private dodgeTimeRemaining: number;
@@ -45,6 +55,10 @@ export class Player {
   private spawnRotationY: number;
   private collidersProvider: (() => PlayerCollider[]) | null = null;
   private readonly collisionRadius: number = 0.7;
+  private readonly accelEpsilonSq: number = 1e-4;
+  private cameraRig: CameraRig | null = null;
+
+  private static readonly ZERO = Vector3.Zero();
 
   private constructor(mesh: TransformNode, animator: PlayerAnimator, input: Input) {
     this.mesh = mesh;
@@ -53,8 +67,17 @@ export class Player {
     }
     this.animator = animator;
     this.input = input;
-    this.walkSpeed = 4;
-    this.sprintSpeed = 7;
+    this.moveVelocity = new Vector3(0, 0, 0);
+    this.targetVelocity = new Vector3(0, 0, 0);
+    this.desiredDirection = new Vector3(0, 0, 1);
+    this.frameDisplacement = new Vector3(0, 0, 0);
+    this.fallbackForward = new Vector3(0, 0, 1);
+    this.fallbackRight = new Vector3(1, 0, 0);
+    this.moveSpeed = 6;
+    this.sprintSpeed = 8.5;
+    this.accel = 18;
+    this.decel = 22;
+    this.faceTurnSpeed = 14;
     this.dodgeSpeed = 14;
     this.dodgeDuration = 0.35;
     this.dodgeTimeRemaining = 0;
@@ -93,10 +116,8 @@ export class Player {
    * Update the player's position, facing, and animation state.
    */
   update(deltaTime: number): void {
-    const moveAxis = this.input.getMoveAxis();
+    const axes = this.input.getMoveAxes();
     const sprinting = this.input.isSprinting();
-    const movementDirection = this.computeMovementDirection(moveAxis);
-    const debugMoveDirection = movementDirection.clone();
     this.attackTriggeredThisFrame = false;
 
     if (this.contactIframesTimer > 0) {
@@ -107,73 +128,137 @@ export class Player {
       this.invulnTimer = Math.max(0, this.invulnTimer - deltaTime);
     }
 
-    // Stamina regen
     if (this.stamina < this.maxStamina) {
       this.stamina = Math.min(this.maxStamina, this.stamina + this.staminaRegenRate * deltaTime);
     }
 
     if (this.dead) {
-      this.animator.updateLocomotion(0, false);
+      this.animator.updateLocomotion({ speed: 0, normalizedSpeed: 0, sprinting: false, deltaTime });
       return;
     }
 
     const colliders = this.collidersProvider?.() ?? null;
-    let locomotionSpeed = 0;
+    this.resolveGroundBasis(this.fallbackForward, this.fallbackRight);
 
-    if (movementDirection.lengthSquared() > 0) {
-      movementDirection.normalize();
-      const baseSpeed = sprinting ? this.sprintSpeed : this.walkSpeed;
-      const rawDisplacement = movementDirection.scale(baseSpeed * deltaTime);
-      const applied = this.applyDisplacement(rawDisplacement, colliders);
-      if (applied.lengthSquared() > 0) {
-        locomotionSpeed = applied.length() / Math.max(deltaTime, 1e-4);
-        this.lastMoveDirection.copyFrom(applied.normalize());
-        const facingAngle: number = Math.atan2(applied.x, applied.z) + Math.PI;
-        this.mesh.rotation.y = facingAngle;
+    const axisMagnitudeSq = axes.x * axes.x + axes.y * axes.y;
+    const hasAxisInput = axisMagnitudeSq > this.accelEpsilonSq;
+    let locomotionSpeed = 0;
+    let normalizedSpeed = 0;
+    const radToDeg = 180 / Math.PI;
+    let targetYawForDebug = this.mesh.rotation.y;
+    let activeDodgeSource: "none" | "cached" | "last" | "forward" = "none";
+
+    if (hasAxisInput) {
+      this.desiredDirection.copyFrom(this.fallbackRight).scaleInPlace(axes.x);
+      this.targetVelocity.copyFrom(this.fallbackForward).scaleInPlace(axes.y);
+      this.desiredDirection.addInPlace(this.targetVelocity);
+      this.desiredDirection.y = 0;
+
+      if (this.desiredDirection.lengthSquared() < this.accelEpsilonSq) {
+        this.desiredDirection.copyFrom(this.fallbackForward);
       } else {
-        const facingAngle: number = Math.atan2(movementDirection.x, movementDirection.z) + Math.PI;
-        this.mesh.rotation.y = facingAngle;
-        this.lastMoveDirection.copyFrom(movementDirection);
+        this.desiredDirection.normalize();
+      }
+
+      this.targetVelocity
+        .copyFrom(this.desiredDirection)
+        .scaleInPlace(sprinting ? this.sprintSpeed : this.moveSpeed);
+      const accelAmount = 1 - Math.exp(-this.accel * deltaTime);
+      Vector3.LerpToRef(this.moveVelocity, this.targetVelocity, accelAmount, this.moveVelocity);
+    } else {
+      this.desiredDirection.set(0, 0, 0);
+      const decelAmount = 1 - Math.exp(-this.decel * deltaTime);
+      Vector3.LerpToRef(this.moveVelocity, Player.ZERO, decelAmount, this.moveVelocity);
+    }
+
+    this.frameDisplacement.copyFrom(this.moveVelocity).scaleInPlace(deltaTime);
+    const applied = this.applyDisplacement(this.frameDisplacement, colliders);
+    if (deltaTime > 0) {
+      const invDelta = 1 / Math.max(deltaTime, 1e-4);
+      if (applied.lengthSquared() > this.accelEpsilonSq) {
+        this.moveVelocity.copyFrom(applied).scaleInPlace(invDelta);
+      } else {
+        this.moveVelocity.set(0, 0, 0);
       }
     }
 
+    locomotionSpeed = this.moveVelocity.length();
+    if (locomotionSpeed > 0.05) {
+      this.lastMoveDirection.copyFrom(this.moveVelocity).normalize();
+      const desiredYaw = Math.atan2(this.moveVelocity.x, this.moveVelocity.z);
+      targetYawForDebug = desiredYaw;
+      const turnAmount = 1 - Math.exp(-this.faceTurnSpeed * deltaTime);
+      this.mesh.rotation.y = Player.lerpAngle(this.mesh.rotation.y, desiredYaw, turnAmount);
+    } else if (hasAxisInput && this.desiredDirection.lengthSquared() > this.accelEpsilonSq) {
+      this.lastMoveDirection.copyFrom(this.desiredDirection);
+      const desiredYaw = Math.atan2(this.desiredDirection.x, this.desiredDirection.z);
+      targetYawForDebug = desiredYaw;
+      const turnAmount = 1 - Math.exp(-this.faceTurnSpeed * deltaTime);
+      this.mesh.rotation.y = Player.lerpAngle(this.mesh.rotation.y, desiredYaw, turnAmount);
+    }
+
+    normalizedSpeed = this.moveSpeed > 0 ? Math.min(1, locomotionSpeed / this.moveSpeed) : 0;
+
     if (this.dodgeTimeRemaining > 0) {
-      const direction =
-        this.dodgeDirection.lengthSquared() > 0
+      const dodgeSource =
+        this.dodgeDirection.lengthSquared() > this.accelEpsilonSq
           ? this.dodgeDirection
-          : this.lastMoveDirection.lengthSquared() > 0
+          : this.lastMoveDirection.lengthSquared() > this.accelEpsilonSq
           ? this.lastMoveDirection
-          : this.getFacingDirection();
-      const normalized = direction.clone().normalize();
-      const displacement = normalized.scale(this.dodgeSpeed * deltaTime);
-      const applied = this.applyDisplacement(displacement, colliders);
-      if (applied.lengthSquared() > 0) {
-        const appliedSpeed = applied.length() / Math.max(deltaTime, 1e-4);
-        locomotionSpeed = Math.max(locomotionSpeed, appliedSpeed);
+          : this.fallbackForward;
+      this.targetVelocity.copyFrom(dodgeSource).normalize();
+      this.frameDisplacement.copyFrom(this.targetVelocity).scaleInPlace(this.dodgeSpeed * deltaTime);
+      const dodgeApplied = this.applyDisplacement(this.frameDisplacement, colliders);
+      if (dodgeApplied.lengthSquared() > this.accelEpsilonSq) {
+        const dodgeSpeed = dodgeApplied.length() / Math.max(deltaTime, 1e-4);
+        locomotionSpeed = Math.max(locomotionSpeed, dodgeSpeed);
+        normalizedSpeed = Math.max(normalizedSpeed, Math.min(1, dodgeSpeed / this.moveSpeed));
+        const dodgeYaw = Math.atan2(dodgeApplied.x, dodgeApplied.z);
+        targetYawForDebug = dodgeYaw;
+        const turnAmount = 1 - Math.exp(-this.faceTurnSpeed * deltaTime);
+        this.mesh.rotation.y = Player.lerpAngle(this.mesh.rotation.y, dodgeYaw, turnAmount);
+        this.lastMoveDirection.copyFrom(this.targetVelocity);
       }
+      activeDodgeSource =
+        this.dodgeDirection.lengthSquared() > this.accelEpsilonSq
+          ? "cached"
+          : this.lastMoveDirection.lengthSquared() > this.accelEpsilonSq
+          ? "last"
+          : "forward";
       this.dodgeTimeRemaining = Math.max(0, this.dodgeTimeRemaining - deltaTime);
     }
 
-    if (this.debugLoggingActive) {
+    const dodgePlanUsesLastDir = hasAxisInput && this.lastMoveDirection.lengthSquared() > this.accelEpsilonSq;
+    const dodgePlanLabel = dodgePlanUsesLastDir ? "lastMoveDir" : "cameraForward";
+
+    if (DEBUG_EDITOR && this.debugLoggingActive) {
+      const currentYawDeg = this.mesh.rotation.y * radToDeg;
+      const desiredYawDeg = targetYawForDebug * radToDeg;
       console.log(
-        `[DBG] player beforeAnim pos=(${this.mesh.position.x.toFixed(2)},${this.mesh.position.z.toFixed(
+        `[DBG] speed=${locomotionSpeed.toFixed(2)} norm=${normalizedSpeed.toFixed(2)} axes=(${axes.x.toFixed(2)},${axes.y.toFixed(
           2
-        )}) speed=${locomotionSpeed.toFixed(2)}`
+        )}) yaw=${currentYawDeg.toFixed(1)}deg->${desiredYawDeg.toFixed(1)}deg dodgePlan=${dodgePlanLabel} dodgeActive=${activeDodgeSource}`
       );
     }
 
-    this.animator.updateLocomotion(locomotionSpeed, sprinting);
+    this.animator.updateLocomotion({ speed: locomotionSpeed, normalizedSpeed, sprinting, deltaTime });
 
     if (typeof window !== "undefined") {
       (window as unknown as { __qaPlayerDebug?: unknown }).__qaPlayerDebug = {
-        axis: { x: moveAxis.x, z: moveAxis.z },
+        axes,
         sprinting,
         speedThisFrame: locomotionSpeed,
+        normalizedSpeed,
+        velocity: this.moveVelocity.asArray(),
+        desiredDirection: this.desiredDirection.asArray(),
         dodgeRemaining: this.dodgeTimeRemaining,
         dodgeDirection: this.dodgeDirection.asArray(),
         lastMoveDirection: this.lastMoveDirection.asArray(),
-        movementDirection: debugMoveDirection.asArray(),
         position: this.mesh.position.asArray(),
+        yaw: this.mesh.rotation.y,
+        targetYaw: targetYawForDebug,
+        dodgePlan: dodgePlanLabel,
+        dodgeActiveSource: activeDodgeSource,
         deltaTime,
       };
     }
@@ -182,17 +267,16 @@ export class Player {
       if (this.stamina >= this.dodgeCost) {
         this.stamina -= this.dodgeCost;
         const baseDirection =
-          movementDirection.lengthSquared() > 0
-            ? movementDirection
-            : this.lastMoveDirection.lengthSquared() > 0
+          hasAxisInput && this.lastMoveDirection.lengthSquared() > this.accelEpsilonSq
             ? this.lastMoveDirection
-            : this.getFacingDirection();
-        if (baseDirection.lengthSquared() > 0) {
-          this.dodgeDirection.copyFrom(baseDirection);
-        } else {
+            : this.fallbackForward;
+        this.dodgeDirection.copyFrom(baseDirection);
+        if (this.dodgeDirection.lengthSquared() < this.accelEpsilonSq) {
           this.dodgeDirection.set(0, 0, 1);
+        } else {
+          this.dodgeDirection.normalize();
         }
-        this.dodgeDirection.normalize();
+        this.lastMoveDirection.copyFrom(this.dodgeDirection);
         this.dodgeTimeRemaining = this.dodgeDuration;
         this.invulnTimer = 0.4;
         this.animator.playDodgeRoll();
@@ -206,12 +290,6 @@ export class Player {
       this.animator.playAttack({ forceRestart: true });
       this.attackTriggeredThisFrame = true;
       console.log("[INPUT] Attack triggered");
-    }
-
-    if (this.debugLoggingActive) {
-      console.log(
-        `[DBG] player afterAnim pos=(${this.mesh.position.x.toFixed(2)},${this.mesh.position.z.toFixed(2)})`
-      );
     }
   }
 
@@ -282,6 +360,10 @@ export class Player {
     this.collidersProvider = provider;
   }
 
+  setCameraRig(cameraRig: CameraRig | null): void {
+    this.cameraRig = cameraRig;
+  }
+
   syncFromSave(): void {
     this.maxHP = SaveService.getMaxHP();
     this.hp = Math.min(this.maxHP, SaveService.getHP());
@@ -301,6 +383,52 @@ export class Player {
 
   teleportToSpawn(): void {
     this.teleportTo(this.spawnPoint, this.spawnRotationY);
+  }
+
+  private resolveGroundBasis(forwardOut: Vector3, rightOut: Vector3): void {
+    if (this.cameraRig) {
+      forwardOut.copyFrom(this.cameraRig.getGroundForward());
+      rightOut.copyFrom(this.cameraRig.getGroundRight());
+      return;
+    }
+
+    const scene = this.mesh.getScene();
+    const activeCamera: Camera | null = scene?.activeCamera ?? null;
+    if (activeCamera) {
+      const ray = activeCamera.getForwardRay();
+      forwardOut.copyFrom(ray.direction);
+      forwardOut.y = 0;
+      if (forwardOut.lengthSquared() < this.accelEpsilonSq) {
+        forwardOut.set(0, 0, 1);
+      } else {
+        forwardOut.normalize();
+      }
+    } else {
+      forwardOut.set(0, 0, 1);
+    }
+
+    Vector3.CrossToRef(Vector3.Up(), forwardOut, rightOut);
+    rightOut.y = 0;
+    if (rightOut.lengthSquared() < this.accelEpsilonSq) {
+      rightOut.set(1, 0, 0);
+    } else {
+      rightOut.normalize();
+    }
+  }
+
+  private static lerpAngle(current: number, target: number, amount: number): number {
+    if (!Number.isFinite(amount)) {
+      return target;
+    }
+    const t = Math.min(Math.max(amount, 0), 1);
+    const twoPi = Math.PI * 2;
+    let delta = (target - current) % twoPi;
+    if (delta > Math.PI) {
+      delta -= twoPi;
+    } else if (delta < -Math.PI) {
+      delta += twoPi;
+    }
+    return current + delta * t;
   }
 
   private applyDisplacement(displacement: Vector3, colliders: PlayerCollider[] | null): Vector3 {
@@ -361,45 +489,6 @@ export class Player {
     return false;
   }
 
-  private computeMovementDirection(axis: { x: number; z: number }): Vector3 {
-    if (axis.x === 0 && axis.z === 0) {
-      return Vector3.Zero();
-    }
-
-    const scene = this.mesh.getScene();
-    const activeCamera: Camera | null = scene?.activeCamera ?? null;
-    if (!activeCamera) {
-      return new Vector3(axis.x, 0, axis.z);
-    }
-
-    const forward = activeCamera.getForwardRay().direction.clone();
-    forward.y = 0;
-    if (forward.lengthSquared() === 0) {
-      forward.set(0, 0, 1);
-    } else {
-      forward.normalize();
-    }
-
-    let right = Vector3.Cross(Vector3.Up(), forward);
-    if (right.lengthSquared() === 0) {
-      right = new Vector3(1, 0, 0);
-    } else {
-      right.normalize();
-    }
-
-    const movement = forward.scale(axis.z).addInPlace(right.scale(axis.x));
-    return movement;
-  }
-
-  private getFacingDirection(): Vector3 {
-    const yaw = this.mesh.rotation.y;
-    const facing = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-    if (facing.lengthSquared() === 0) {
-      return new Vector3(0, 0, 1);
-    }
-    return facing.normalize();
-  }
-
   private handleDeath(): void {
     if (this.dead) {
       return;
@@ -411,7 +500,7 @@ export class Player {
     this.invulnTimer = 0;
     this.stamina = this.maxStamina; // full stamina on death
     this.animator.cancelAttack();
-    this.animator.updateLocomotion(0, false);
+    this.animator.updateLocomotion({ speed: 0, normalizedSpeed: 0, sprinting: false });
   }
 
   respawn(): void {
@@ -428,7 +517,7 @@ export class Player {
     this.lastMoveDirection.set(0, 0, 1);
     this.teleportToSpawn();
     this.animator.cancelAttack();
-    this.animator.updateLocomotion(0, false);
+    this.animator.updateLocomotion({ speed: 0, normalizedSpeed: 0, sprinting: false });
     console.log(
       `[COMBAT] Player respawned at (${this.mesh.position.x.toFixed(2)}, ${this.mesh.position.z.toFixed(
         2

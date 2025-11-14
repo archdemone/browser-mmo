@@ -17,6 +17,8 @@ export class CameraRig {
   private readonly zoomSpeed: number;
   private readonly targetOffset: Vector3;
   private debugLogTimeRemaining: number = 0;
+  private readonly groundForward: Vector3 = new Vector3(0, 0, 1);
+  private readonly groundRight: Vector3 = new Vector3(1, 0, 0);
 
   constructor(scene: Scene, target: TransformNode | null) {
     this.scene = scene;
@@ -104,6 +106,30 @@ export class CameraRig {
 
   enableDebugLogging(seconds: number): void {
     this.debugLogTimeRemaining = Math.max(this.debugLogTimeRemaining, seconds);
+  }
+
+  getGroundForward(): Vector3 {
+    const forward = this.camera.getForwardRay().direction;
+    this.groundForward.copyFrom(forward);
+    this.groundForward.y = 0;
+    if (this.groundForward.lengthSquared() < 1e-4) {
+      this.groundForward.set(0, 0, 1);
+    } else {
+      this.groundForward.normalize();
+    }
+    return this.groundForward;
+  }
+
+  getGroundRight(): Vector3 {
+    const forward = this.getGroundForward();
+    Vector3.CrossToRef(Vector3.Up(), forward, this.groundRight);
+    this.groundRight.y = 0;
+    if (this.groundRight.lengthSquared() < 1e-4) {
+      this.groundRight.set(1, 0, 0);
+    } else {
+      this.groundRight.normalize();
+    }
+    return this.groundRight;
   }
 
   /**

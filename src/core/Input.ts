@@ -115,40 +115,49 @@ export class Input {
    * Compute the movement axis based on currently pressed keys.
    */
   getMoveAxis(): { x: number; z: number } {
+    const { x, y } = this.getMoveAxes();
+    return { x, z: y };
+  }
+
+  /**
+   * Compute the movement axes relative to camera-aligned X (right) and Y (forward) directions.
+   */
+  getMoveAxes(): { x: number; y: number } {
     if (this.debugAxisOverride) {
-      return { x: this.debugAxisOverride.x, z: this.debugAxisOverride.z };
+      return { x: this.debugAxisOverride.x, y: this.debugAxisOverride.z };
     }
 
-    let x: number = 0;
-    let z: number = 0;
+    let x = 0;
+    let y = 0;
 
-    if (this.pressedKeys.has("KeyW")) {
-      z += 1;
+    if (this.pressedKeys.has("KeyD") || this.pressedKeys.has("ArrowRight")) {
+      x += 1;
     }
 
-    if (this.pressedKeys.has("KeyS")) {
-      z -= 1;
-    }
-
-    if (this.pressedKeys.has("KeyA")) {
+    if (this.pressedKeys.has("KeyA") || this.pressedKeys.has("ArrowLeft")) {
       x -= 1;
     }
 
-    if (this.pressedKeys.has("KeyD")) {
-      x += 1;
+    if (this.pressedKeys.has("KeyW") || this.pressedKeys.has("ArrowUp")) {
+      y += 1;
+    }
+
+    if (this.pressedKeys.has("KeyS") || this.pressedKeys.has("ArrowDown")) {
+      y -= 1;
     }
 
     const virtual = this.getVirtualAxis();
     x += virtual.x;
-    z += virtual.z;
+    y += virtual.z;
 
-    const length: number = Math.hypot(x, z);
+    const length = Math.hypot(x, y);
     if (length > 1) {
-      x /= length;
-      z /= length;
+      const inv = 1 / length;
+      x *= inv;
+      y *= inv;
     }
 
-    return { x, z };
+    return { x, y };
   }
 
   /**
@@ -246,8 +255,13 @@ export class Input {
     this.dodgeQueued = true;
   }
 
-  setDebugAxisOverride(axis: { x: number; z: number } | null): void {
-    this.debugAxisOverride = axis ? { x: axis.x, z: axis.z } : null;
+  setDebugAxisOverride(axis: { x: number; z?: number; y?: number } | null): void {
+    if (!axis) {
+      this.debugAxisOverride = null;
+      return;
+    }
+    const forward = axis.z ?? axis.y ?? 0;
+    this.debugAxisOverride = { x: axis.x, z: forward };
   }
 
   queueDebugDodgeRoll(): void {
