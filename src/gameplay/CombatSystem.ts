@@ -31,7 +31,22 @@ export class CombatSystem {
       console.warn("[COMBAT] No active skill available for player");
       return;
     }
+    this.executeSkill(player, skill, enemies);
+  }
 
+  castSkill(player: Player, skill: SkillData, enemies: Enemy[]): void {
+    if (!skill) {
+      console.warn("[COMBAT] No skill provided for cast");
+      return;
+    }
+    this.executeSkill(player, skill, enemies);
+  }
+
+  private resolveActiveSkill(): SkillData | null {
+    return getDerivedSkill() ?? getSkill("warrior-heavy-strike") ?? null;
+  }
+
+  private executeSkill(player: Player, skill: SkillData, enemies: Enemy[]): void {
     const aliveEnemies = enemies.filter((enemy) => !enemy.isDead());
     if (aliveEnemies.length === 0) {
       return;
@@ -73,10 +88,6 @@ export class CombatSystem {
     console.log(
       `[COMBAT] Cast ${skill.name}: hits=${castResult.hits}, targets=${castResult.targetsHit}`
     );
-  }
-
-  private resolveActiveSkill(): SkillData | null {
-    return getDerivedSkill() ?? getSkill("warrior-heavy-strike") ?? null;
   }
 
   private handleDamage(

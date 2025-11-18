@@ -3,6 +3,8 @@ import type {
   VisualControlId,
 } from "../visuals/VisualPresetManager";
 
+import type { SkillSlotId } from "../gameplay/ActiveSkillService";
+
 export interface HudState {
   hp: number;
   maxHP: number;
@@ -35,6 +37,14 @@ class HudUIImpl {
   private dodgeSlot: HTMLDivElement | null = null;
   private skill1Slot: HTMLDivElement | null = null;
   private skill2Slot: HTMLDivElement | null = null;
+  private skillSlotActionLabels: Record<SkillSlotId, HTMLDivElement | null> = {
+    skill1: null,
+    skill2: null,
+  };
+  private skillSlotHandlers: Record<SkillSlotId, (() => void) | null> = {
+    skill1: null,
+    skill2: null,
+  };
   private enterPrompt: HTMLDivElement | null = null;
   private deathBanner: HTMLDivElement | null = null;
   private attackHandler: (() => void) | null = null;
@@ -277,14 +287,20 @@ class HudUIImpl {
     this.abilityBar.style.transform = "translateX(-50%)";
     this.abilityBar.style.display = "flex";
     this.abilityBar.style.gap = "8px";
-    this.abilityBar.style.pointerEvents = "none";
+    this.abilityBar.style.pointerEvents = "auto";
     root.appendChild(this.abilityBar);
 
-    this.attackSlot = this.createAbilitySlot("LMB", "Attack", true);
+    const attackSlotDescriptor = this.createAbilitySlot("LMB", "Attack", true);
+    this.attackSlot = attackSlotDescriptor.container;
     this.attackSlot.classList.add("attack-button");
-    this.dodgeSlot = this.createAbilitySlot("Space", "Dodge", true);
-    this.skill1Slot = this.createAbilitySlot("Q", "Skill 1", false);
-    this.skill2Slot = this.createAbilitySlot("W", "Skill 2", false);
+    const dodgeSlotDescriptor = this.createAbilitySlot("Space", "Dodge", true);
+    this.dodgeSlot = dodgeSlotDescriptor.container;
+    const skill1SlotDescriptor = this.createAbilitySlot("Q", "Skill 1", true, "skill1");
+    this.skill1Slot = skill1SlotDescriptor.container;
+    this.skillSlotActionLabels.skill1 = skill1SlotDescriptor.actionLabel;
+    const skill2SlotDescriptor = this.createAbilitySlot("W", "Skill 2", true, "skill2");
+    this.skill2Slot = skill2SlotDescriptor.container;
+    this.skillSlotActionLabels.skill2 = skill2SlotDescriptor.actionLabel;
 
     this.abilityBar.appendChild(this.attackSlot);
     this.abilityBar.appendChild(this.dodgeSlot);
@@ -407,6 +423,10 @@ class HudUIImpl {
     this.visualPresetHandler = cb;
   }
 
+  onClickSkillSlot(slot: SkillSlotId, cb: (() => void) | null): void {
+    this.skillSlotHandlers[slot] = cb;
+  }
+
   onFxIntensityChanged(cb: ((value: number) => void) | null): void {
     this.fxIntensityHandler = cb;
   }
@@ -441,6 +461,14 @@ class HudUIImpl {
     if (this.fxSliderValue) {
       this.fxSliderValue.textContent = `${Math.round(clamped * 100)}%`;
     }
+  }
+
+  setSkillSlotLabel(slot: SkillSlotId, label: string): void {
+    const actionLabel = this.skillSlotActionLabels[slot];
+    if (!actionLabel) {
+      return;
+    }
+    actionLabel.textContent = label;
   }
 
   setGameplayHudVisible(visible: boolean): void {
@@ -756,7 +784,12 @@ class HudUIImpl {
     return { container, inner: barInner, text: valueSpan };
   }
 
-  private createAbilitySlot(key: string, label: string, clickable: boolean): HTMLDivElement {
+  private createAbilitySlot(
+    key: string,
+    label: string,
+    clickable: boolean,
+    slotId?: SkillSlotId
+  ): { container: HTMLDivElement; actionLabel: HTMLDivElement } {
     const slot = document.createElement("div");
     slot.style.width = "56px";
     slot.style.height = "56px";
@@ -771,6 +804,9 @@ class HudUIImpl {
     slot.style.fontSize = "12px";
     slot.style.pointerEvents = clickable ? "auto" : "none";
     slot.style.cursor = clickable ? "pointer" : "default";
+    if (slotId) {
+      slot.dataset.abilitySlot = slotId;
+    }
 
     const keyLabel = document.createElement("div");
     keyLabel.textContent = key;
@@ -784,7 +820,7 @@ class HudUIImpl {
     actionLabel.style.fontSize = "11px";
     slot.appendChild(actionLabel);
 
-    return slot;
+    return { container: slot, actionLabel };
   }
 
   private attachEventHandlers(): void {
@@ -801,6 +837,28 @@ class HudUIImpl {
         if (this.dodgeHandler) {
           this.dodgeHandler();
         }
+      });
+    }
+
+    if (this.skill1Slot) {
+      this.skill1Slot.addEventListener("click", (event) => {
+        if (!this.skillSlotHandlers.skill1) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        this.skillSlotHandlers.skill1();
+      });
+    }
+
+    if (this.skill2Slot) {
+      this.skill2Slot.addEventListener("click", (event) => {
+        if (!this.skillSlotHandlers.skill2) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        this.skillSlotHandlers.skill2();
       });
     }
 

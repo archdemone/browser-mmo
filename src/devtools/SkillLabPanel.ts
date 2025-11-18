@@ -1,8 +1,9 @@
 ﻿import { SkillDraftStore, SkillDraftState } from "./hooks/useSkillDraft";
 import { SkillData, SkillComponent } from "../skills/skills.schema";
-import { SupportEntry, validateSupport } from "../supports/supports.schema";
+import { SupportEntry, validateSupport, applySupports } from "../supports/supports.schema";
 import { SkillLabSnapshot } from "../utils/persistence";
 import { DummySpawner } from "./DummySpawner";
+import { ActiveSkillService } from "../gameplay/ActiveSkillService";
 import { KeybindBar, KeybindSlot } from "../ui/KeybindBar";
 import { ChoicePanel } from "../ui/ChoicePanel";
 
@@ -54,6 +55,13 @@ export class SkillLabPanel {
 
   private state: SkillDraftState | null = null;
   private root: HTMLDivElement | null = null;
+  private container: HTMLElement | null = null;
+  private contentWrapper: HTMLDivElement | null = null;
+  private collapsed = false;
+  private overlayVisible = true;
+  private handleButton: HTMLButtonElement | null = null;
+  private minimizeToggle: HTMLButtonElement | null = null;
+  private lowVisibilityEnabled = false;
 
   private listColumn: HTMLDivElement | null = null;
   private inspectorColumn: HTMLDivElement | null = null;
@@ -89,6 +97,7 @@ export class SkillLabPanel {
 
     this.store.init();
     const container = options.attachTo ?? document.body;
+    this.container = container;
     this.buildLayout(container);
     this.store.subscribe((state) => {
       this.state = state;
@@ -101,6 +110,13 @@ export class SkillLabPanel {
     if (this.root?.parentElement) {
       this.root.parentElement.removeChild(this.root);
     }
+    if (this.handleButton?.parentElement) {
+      this.handleButton.parentElement.removeChild(this.handleButton);
+    }
+    this.handleButton = null;
+    this.container = null;
+    this.contentWrapper = null;
+    this.minimizeToggle = null;
     this.root = null;
   }
 
@@ -117,6 +133,8 @@ export class SkillLabPanel {
     this.root.style.width = "100vw";
     this.root.style.height = "100vh";
     this.root.style.display = "flex";
+    this.root.style.flexDirection = "column";
+    this.root.style.justifyContent = "flex-start";
     this.root.style.background = "rgba(6, 8, 14, 0.94)";
     this.root.style.color = "#f3f5ff";
     this.root.style.fontFamily =
@@ -124,7 +142,18 @@ export class SkillLabPanel {
     this.root.style.fontSize = "13px";
     this.root.style.zIndex = "9998";
     this.root.style.backdropFilter = "blur(16px)";
+    this.root.style.overflow = "hidden";
+    this.root.style.pointerEvents = "auto";
     container.appendChild(this.root);
+
+    this.root.appendChild(this.createHeader());
+
+    this.contentWrapper = document.createElement("div");
+    this.contentWrapper.style.display = "flex";
+    this.contentWrapper.style.flex = "1 1 auto";
+    this.contentWrapper.style.overflow = "hidden";
+    this.contentWrapper.style.minHeight = "0";
+    this.root.appendChild(this.contentWrapper);
 
     this.listColumn = document.createElement("div");
     this.listColumn.style.flex = "0 0 260px";
@@ -133,7 +162,7 @@ export class SkillLabPanel {
     this.listColumn.style.borderRight = "1px solid rgba(255,255,255,0.08)";
     this.listColumn.style.padding = "16px";
     this.listColumn.style.gap = "12px";
-    this.root.appendChild(this.listColumn);
+    this.contentWrapper.appendChild(this.listColumn);
 
     this.inspectorColumn = document.createElement("div");
     this.inspectorColumn.style.flex = "1 1 auto";
@@ -142,7 +171,7 @@ export class SkillLabPanel {
     this.inspectorColumn.style.padding = "16px";
     this.inspectorColumn.style.gap = "16px";
     this.inspectorColumn.style.overflowY = "auto";
-    this.root.appendChild(this.inspectorColumn);
+    this.contentWrapper.appendChild(this.inspectorColumn);
 
     this.sandboxColumn = document.createElement("div");
     this.sandboxColumn.style.flex = "0 0 320px";
@@ -152,11 +181,139 @@ export class SkillLabPanel {
     this.sandboxColumn.style.gap = "16px";
     this.sandboxColumn.style.borderLeft = "1px solid rgba(255,255,255,0.08)";
     this.sandboxColumn.style.overflowY = "auto";
-    this.root.appendChild(this.sandboxColumn);
+    this.contentWrapper.appendChild(this.sandboxColumn);
 
     this.buildListColumn();
     this.buildInspectorColumn();
     this.buildSandboxColumn();
+    this.ensureHandle(container);
+    this.setCollapsed(false);
+  }
+
+  private createHeader(): HTMLDivElement {
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.alignItems = "center";
+    header.style.justifyContent = "space-between";
+    header.style.padding = "12px 16px";
+    header.style.borderBottom = "1px solid rgba(255,255,255,0.12)";
+    header.style.flexShrink = "0";
+
+    const title = document.createElement("div");
+    title.style.display = "flex";
+    title.style.alignItems = "center";
+    title.style.gap = "6px";
+    const label = document.createElement("span");
+    label.textContent = "Skill Lab";
+    label.style.fontSize = "16px";
+    label.style.fontWeight = "600";
+    title.appendChild(label);
+    header.appendChild(title);
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+
+    this.minimizeToggle = createButton("Minimize", () => this.toggleCollapsed());
+    this.minimizeToggle.style.minWidth = "96px";
+    actions.appendChild(this.minimizeToggle);
+    const exitButton = createButton("Return to Hideout", () => this.hideOverlay(), true);
+    exitButton.style.minWidth = "140px";
+    actions.appendChild(exitButton);
+
+    header.appendChild(actions);
+    return header;
+  }
+
+  private ensureHandle(container: HTMLElement): void {
+    if (this.handleButton) {
+      return;
+    }
+    const handle = createButton("Skill Lab", () => this.setOverlayVisible(true));
+    handle.style.position = "fixed";
+    handle.style.top = "16px";
+    handle.style.left = "16px";
+    handle.style.zIndex = "10001";
+    handle.style.display = this.overlayVisible ? "none" : "block";
+    handle.style.padding = "6px 12px";
+    container.appendChild(handle);
+    this.handleButton = handle;
+  }
+
+  private toggleCollapsed(): void {
+    this.setCollapsed(!this.collapsed);
+  }
+
+  private setCollapsed(value: boolean): void {
+    this.collapsed = value;
+    this.updateCollapseLabel();
+    this.applyLayoutMode();
+  }
+
+  private hideOverlay(): void {
+    if (!this.overlayVisible) {
+      return;
+    }
+    this.setOverlayVisible(false);
+    console.log("[SkillLabPanel] Skill Lab minimized to return to scene");
+  }
+
+  private setOverlayVisible(visible: boolean): void {
+    if (!this.root || !this.handleButton) {
+      this.overlayVisible = visible;
+      return;
+    }
+    this.overlayVisible = visible;
+    this.root.style.display = visible ? "flex" : "none";
+    this.handleButton.style.display = visible ? "none" : "block";
+    if (visible) {
+      this.applyLayoutMode();
+    }
+  }
+
+  private updateCollapseLabel(): void {
+    if (!this.minimizeToggle) {
+      return;
+    }
+    this.minimizeToggle.textContent = this.collapsed ? "Expand" : "Minimize";
+  }
+
+  private applyLayoutMode(): void {
+    if (!this.root || !this.contentWrapper) {
+      return;
+    }
+    const expandedBackground = this.lowVisibilityEnabled
+      ? "rgba(3,4,8,0.9)"
+      : "rgba(6, 8, 14, 0.94)";
+    const collapsedBackground = this.lowVisibilityEnabled
+      ? "rgba(3,4,8,0.78)"
+      : "rgba(6, 8, 14, 0.85)";
+    if (this.collapsed) {
+      this.root.style.width = "360px";
+      this.root.style.height = "auto";
+      this.root.style.top = "20px";
+      this.root.style.left = "20px";
+      this.root.style.right = "auto";
+      this.root.style.bottom = "auto";
+      this.root.style.borderRadius = "12px";
+      this.root.style.boxShadow = "0 12px 35px rgba(0,0,0,0.45)";
+      this.root.style.backdropFilter = "none";
+      this.root.style.overflow = "visible";
+      this.contentWrapper.style.display = "none";
+    } else {
+      this.root.style.width = "100vw";
+      this.root.style.height = "100vh";
+      this.root.style.top = "0";
+      this.root.style.left = "0";
+      this.root.style.right = "0";
+      this.root.style.bottom = "0";
+      this.root.style.borderRadius = "0";
+      this.root.style.boxShadow = "none";
+      this.root.style.backdropFilter = this.lowVisibilityEnabled ? "none" : "blur(16px)";
+      this.root.style.overflow = "hidden";
+      this.contentWrapper.style.display = "flex";
+    }
+    this.root.style.background = this.collapsed ? collapsedBackground : expandedBackground;
   }
   private buildListColumn(): void {
     if (!this.listColumn) {
@@ -257,6 +414,7 @@ export class SkillLabPanel {
     toolbar.appendChild(this.redoButton);
     toolbar.appendChild(createButton("Export", () => downloadSnapshot(this.store.exportSnapshot())));
     toolbar.appendChild(createButton("Import", () => this.promptImport()));
+    toolbar.appendChild(createButton("Save Skill", () => this.handleSaveSkill(), true));
     toolbar.appendChild(createButton("Commit", () => void this.store.commit(), true));
     toolbar.appendChild(createButton("Clear", () => this.store.clearDraft()));
     this.inspectorColumn.appendChild(toolbar);
@@ -393,10 +551,18 @@ export class SkillLabPanel {
       button.appendChild(name);
 
       const meta = document.createElement("span");
-      meta.textContent = `Lv ${skill.levelReq} • ${skill.tags.join(", ")}`;
+      meta.textContent = `Lv ${skill.levelReq} · ${skill.tags.join(", ")}`;
       meta.style.fontSize = "11px";
       meta.style.opacity = "0.7";
       button.appendChild(meta);
+
+      const preview = document.createElement("span");
+      preview.style.fontSize = "11px";
+      preview.style.opacity = "0.6";
+      preview.textContent = skill.components.length
+        ? `Components: ${skill.components.length} (${skill.components[0].shape?.type ?? "shape"} @${skill.components[0].timing.start}s)`
+        : "Components not yet defined";
+      button.appendChild(preview);
 
       this.skillListView.appendChild(button);
     });
@@ -423,6 +589,7 @@ export class SkillLabPanel {
       return;
     }
 
+    this.inspectorView.appendChild(this.createVariantCard(state, skill));
     this.inspectorView.appendChild(this.createMetaCard(skill));
     this.inspectorView.appendChild(this.createComponentCard(skill));
     this.inspectorView.appendChild(
@@ -646,20 +813,8 @@ export class SkillLabPanel {
         )
       );
 
-      block.appendChild(
-        this.createJsonCard("Shape", component.shape, "{ \"type\": \"circle\", \"radius\": 2 }", (data) =>
-          this.store.updateSkill(skill.id, (draft) => {
-            draft.components[index].shape = data as SkillComponent["shape"];
-          })
-        )
-      );
-      block.appendChild(
-        this.createJsonCard("Motion", component.motion, "{ \"kind\": \"followCaster\" }", (data) =>
-          this.store.updateSkill(skill.id, (draft) => {
-            draft.components[index].motion = data;
-          })
-        )
-      );
+      block.appendChild(this.createShapeSection(skill.id, index, component));
+      block.appendChild(this.createMotionSection(skill.id, index, component));
       block.appendChild(
         this.createJsonCard("Limits", component.limits, "{ \"maxTargets\": 5 }", (data) =>
           this.store.updateSkill(skill.id, (draft) => {
@@ -667,18 +822,395 @@ export class SkillLabPanel {
           })
         )
       );
-      block.appendChild(
-        this.createJsonCard("Damage", component.damage, "{ \"baseMult\": 1.1 }", (data) =>
-          this.store.updateSkill(skill.id, (draft) => {
-            draft.components[index].damage = data;
-          })
-        )
-      );
+      block.appendChild(this.createDamageSection(skill.id, index, component));
 
       card.appendChild(block);
     });
 
     return card;
+  }
+
+  private createVariantCard(state: SkillDraftState, skill: SkillData): HTMLElement {
+    const card = createCard();
+    const title = document.createElement("h3");
+    title.textContent = "Variants";
+    title.style.margin = "0";
+    title.style.fontSize = "14px";
+    title.style.fontWeight = "600";
+    card.appendChild(title);
+
+    const slotRow = document.createElement("div");
+    slotRow.style.display = "flex";
+    slotRow.style.gap = "8px";
+    ["A", "B"].forEach((slot) => {
+      const button = createButton(`Slot ${slot}`, () =>
+        this.store.setVariantSlot(slot as "A" | "B")
+      );
+      button.style.flex = "1";
+      button.style.fontSize = "12px";
+      button.style.padding = "6px";
+      if (state.variantSlot === slot) {
+        button.style.background = "rgba(138,170,255,0.45)";
+        button.style.border = "1px solid rgba(138,170,255,0.7)";
+      }
+      slotRow.appendChild(button);
+    });
+    card.appendChild(slotRow);
+
+    const actionRow = document.createElement("div");
+    actionRow.style.display = "flex";
+    actionRow.style.gap = "6px";
+    const saveButton = createButton(`Save to slot ${state.variantSlot}`, () =>
+      this.store.saveVariant(skill.id)
+    );
+    saveButton.style.flex = "1";
+    actionRow.appendChild(saveButton);
+    ["A", "B"].forEach((slot) => {
+      const variant = state.variants[skill.id]?.[slot];
+      const button = createButton(`Load ${slot}`, () => this.store.loadVariant(skill.id, slot));
+      button.style.flex = "1";
+      button.disabled = !variant;
+      actionRow.appendChild(button);
+    });
+    card.appendChild(actionRow);
+
+    const status = document.createElement("div");
+    status.style.fontSize = "11px";
+    status.style.opacity = "0.75";
+    const variants = state.variants[skill.id] ?? {};
+    status.textContent = `Slot A: ${variants.A ? "Saved" : "Empty"} · Slot B: ${
+      variants.B ? "Saved" : "Empty"
+    }`;
+    card.appendChild(status);
+
+    const otherSlot = state.variantSlot === "A" ? "B" : "A";
+    const diffLines = this.describeVariantDiff(skill, variants[otherSlot]);
+    const diffLabel = document.createElement("span");
+    diffLabel.textContent = `Compared to slot ${otherSlot}`;
+    diffLabel.style.fontSize = "11px";
+    diffLabel.style.opacity = "0.7";
+    diffLabel.style.marginTop = "8px";
+    card.appendChild(diffLabel);
+    diffLines.forEach((line) => {
+      const entry = document.createElement("div");
+      entry.textContent = line;
+      entry.style.fontSize = "11px";
+      entry.style.opacity = "0.65";
+      card.appendChild(entry);
+    });
+
+    return card;
+  }
+
+  private createShapeSection(
+    skillId: string,
+    componentIndex: number,
+    component: SkillComponent
+  ): HTMLElement {
+    const card = createCard();
+    const title = document.createElement("span");
+    title.textContent = "Shape";
+    title.style.fontSize = "12px";
+    title.style.fontWeight = "600";
+    card.appendChild(title);
+
+    const shape = component.shape ?? createDefaultShape("circle");
+    const shapeField = labeledSelect(
+      "Shape Type",
+      [
+        { value: "circle", label: "Circle" },
+        { value: "cone", label: "Cone" },
+        { value: "line", label: "Line" },
+        { value: "projectile", label: "Projectile" },
+        { value: "ring", label: "Ring" },
+        { value: "custom", label: "Custom" },
+      ],
+      shape.type,
+      (value) => this.applyComponentShapePatch(skillId, componentIndex, { type: value })
+    );
+    card.appendChild(shapeField);
+
+    const fieldWrapper = document.createElement("div");
+    fieldWrapper.style.display = "grid";
+    fieldWrapper.style.gridTemplateColumns = "repeat(auto-fit, minmax(140px, 1fr))";
+    fieldWrapper.style.gap = "6px";
+
+    switch (shape.type) {
+      case "circle": {
+        const circle = shape as Extract<SkillComponent["shape"], { type: "circle" }>;
+        fieldWrapper.appendChild(
+          labeledNumber("Radius", circle.radius ?? 2, 0, (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { radius: value })
+          )
+        );
+        break;
+      }
+      case "cone": {
+        const cone = shape as Extract<SkillComponent["shape"], { type: "cone" }>;
+        fieldWrapper.appendChild(
+          labeledNumber("Angle", cone.angle ?? 60, 0, (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { angle: value })
+          )
+        );
+        fieldWrapper.appendChild(
+          labeledNumber("Range", cone.range ?? 5, 0, (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { range: value })
+          )
+        );
+        break;
+      }
+      case "line": {
+        const line = shape as Extract<SkillComponent["shape"], { type: "line" }>;
+        fieldWrapper.appendChild(
+          labeledNumber("Length", line.length ?? 4, 0, (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { length: value })
+          )
+        );
+        fieldWrapper.appendChild(
+          labeledNumber("Width", line.width ?? 0.5, 0, (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { width: value })
+          )
+        );
+        break;
+      }
+      case "projectile": {
+        const projectile = shape as Extract<SkillComponent["shape"], { type: "projectile" }>;
+        fieldWrapper.appendChild(
+          labeledNumber("Speed", projectile.speed ?? 12, 0, (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { speed: value })
+          )
+        );
+        fieldWrapper.appendChild(
+          labeledNumber("Lifetime", projectile.lifetime ?? 1, 0, (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { lifetime: value })
+          )
+        );
+        fieldWrapper.appendChild(
+          labeledNumber("Count", projectile.count ?? 1, 1, (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { count: Math.max(1, Math.floor(value)) })
+          )
+        );
+        fieldWrapper.appendChild(
+          labeledSelect(
+            "Pattern",
+            [
+              { value: "straight", label: "Straight" },
+              { value: "spread", label: "Spread" },
+              { value: "return", label: "Return" },
+            ],
+            projectile.pattern ?? "straight",
+            (value) =>
+              this.applyComponentShapePatch(skillId, componentIndex, { pattern: value as typeof projectile.pattern })
+          )
+        );
+        break;
+      }
+      case "ring": {
+        const ring = shape as Extract<SkillComponent["shape"], { type: "ring" }>;
+        fieldWrapper.appendChild(
+          labeledNumber("Inner", ring.inner ?? 1, 0, (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { inner: value })
+          )
+        );
+        fieldWrapper.appendChild(
+          labeledNumber("Outer", ring.outer ?? 2, 0, (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { outer: value })
+          )
+        );
+        fieldWrapper.appendChild(
+          labeledNumber("Expand Rate", ring.expandRate ?? 0, 0, (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { expandRate: value })
+          )
+        );
+        break;
+      }
+      case "custom": {
+        const custom = shape as Extract<SkillComponent["shape"], { type: "custom" }>;
+        fieldWrapper.appendChild(
+          labeledInput("Reference", custom.ref ?? "", (value) =>
+            this.applyComponentShapePatch(skillId, componentIndex, { ref: value })
+          )
+        );
+        break;
+      }
+    }
+
+    card.appendChild(fieldWrapper);
+    return card;
+  }
+
+  private createMotionSection(
+    skillId: string,
+    componentIndex: number,
+    component: SkillComponent
+  ): HTMLElement {
+    const card = createCard();
+    const title = document.createElement("span");
+    title.textContent = "Motion";
+    title.style.fontSize = "12px";
+    title.style.fontWeight = "600";
+    card.appendChild(title);
+
+    const motion = component.motion ?? createDefaultMotion("none");
+    card.appendChild(
+      labeledSelect(
+        "Motion Kind",
+        [
+          { value: "none", label: "None" },
+          { value: "followCaster", label: "Follow Caster" },
+          { value: "followTarget", label: "Follow Target" },
+          { value: "arc", label: "Arc" },
+          { value: "dash", label: "Dash" },
+        ],
+        motion.kind,
+        (value) => this.applyComponentMotionPatch(skillId, componentIndex, { kind: value })
+      )
+    );
+
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "grid";
+    wrapper.style.gridTemplateColumns = "repeat(auto-fit, minmax(140px, 1fr))";
+    wrapper.style.gap = "6px";
+
+    const params = motion.params ?? {};
+    const appendParam = (label: string, key: string, fallback: number) => {
+      wrapper.appendChild(
+        labeledNumber(label, params[key] ?? fallback, 0, (value) =>
+          this.applyComponentMotionPatch(skillId, componentIndex, { params: { [key]: value } })
+        )
+      );
+    };
+
+    switch (motion.kind) {
+      case "dash":
+        appendParam("Distance", "distance", 6);
+        appendParam("Speed", "speed", 14);
+        appendParam("Stop Threshold", "stopOnCollision", 0);
+        break;
+      case "arc":
+        appendParam("Height", "height", 2);
+        appendParam("Speed", "speed", 8);
+        break;
+      case "followCaster":
+      case "followTarget":
+      default:
+        appendParam("Speed", "speed", 6);
+        break;
+    }
+
+    card.appendChild(wrapper);
+    return card;
+  }
+
+  private createDamageSection(
+    skillId: string,
+    componentIndex: number,
+    component: SkillComponent
+  ): HTMLElement {
+    const card = createCard();
+    const title = document.createElement("span");
+    title.textContent = "Damage";
+    title.style.fontSize = "12px";
+    title.style.fontWeight = "600";
+    card.appendChild(title);
+
+    const damage = component.damage ?? createDefaultDamage();
+    card.appendChild(
+      labeledNumber("Base Mult", damage.baseMult ?? 1, 0, (value) =>
+        this.applyComponentDamagePatch(skillId, componentIndex, { baseMult: value })
+      )
+    );
+    card.appendChild(
+      labeledNumber("Flat Add", damage.addedFlat ?? 0, 0, (value) =>
+        this.applyComponentDamagePatch(skillId, componentIndex, { addedFlat: value })
+      )
+    );
+    card.appendChild(
+      labeledNumber("Crit Override", damage.critOverride ?? 0, 0, (value) =>
+        this.applyComponentDamagePatch(skillId, componentIndex, { critOverride: value })
+      )
+    );
+
+    return card;
+  }
+
+  private applyComponentShapePatch(
+    skillId: string,
+    componentIndex: number,
+    patch: Partial<SkillComponent["shape"]>
+  ): void {
+    this.store.updateSkill(skillId, (draft) => {
+      const component = draft.components[componentIndex];
+      if (!component) {
+        return;
+      }
+      const current = component.shape ?? createDefaultShape("circle");
+      const next = patch.type
+        ? { ...createDefaultShape(patch.type), ...patch }
+        : { ...current, ...patch };
+      component.shape = next;
+    });
+  }
+
+  private applyComponentMotionPatch(
+    skillId: string,
+    componentIndex: number,
+    patch: Partial<SkillComponent["motion"]>
+  ): void {
+    this.store.updateSkill(skillId, (draft) => {
+      const component = draft.components[componentIndex];
+      if (!component) {
+        return;
+      }
+      const current = component.motion ?? createDefaultMotion("none");
+      const { params: paramPatch, ...rest } = patch;
+      const baseMotion = patch.kind ? createDefaultMotion(patch.kind) : current;
+      const next: SkillComponent["motion"] = {
+        ...baseMotion,
+        ...rest,
+        params: {
+          ...(baseMotion.params ?? {}),
+          ...(paramPatch ?? {}),
+        },
+      };
+      component.motion = next;
+    });
+  }
+
+  private applyComponentDamagePatch(
+    skillId: string,
+    componentIndex: number,
+    patch: Partial<SkillComponent["damage"]>
+  ): void {
+    this.store.updateSkill(skillId, (draft) => {
+      const component = draft.components[componentIndex];
+      if (!component) {
+        return;
+      }
+      const current = component.damage ?? createDefaultDamage();
+      component.damage = { ...current, ...patch };
+    });
+  }
+
+  private describeVariantDiff(base: SkillData, variant?: SkillData): string[] {
+    if (!variant) {
+      return ["No variant saved for the opposite slot yet."];
+    }
+    const diffs: string[] = [];
+    const addDiff = (label: string, left: unknown, right: unknown) => {
+      if (left !== right) {
+        diffs.push(`${label}: ${left} vs ${right}`);
+      }
+    };
+    addDiff("Base Mult", base.baseMult, variant.baseMult);
+    addDiff("Cost", base.cost, variant.cost);
+    addDiff("Cooldown", base.cooldown, variant.cooldown);
+    addDiff("Components", base.components.length, variant.components.length);
+    addDiff("Tags", base.tags.join(","), variant.tags.join(","));
+    if (diffs.length === 0) {
+      diffs.push("Variants match currently.");
+    }
+    return diffs;
   }
 
   private createJsonCard<T>(
@@ -969,6 +1501,24 @@ export class SkillLabPanel {
     }
   }
 
+  private handleSaveSkill(): void {
+    if (!this.state) {
+      console.warn("[SkillLabPanel] No state available for saving");
+      return;
+    }
+    const skill = this.state.skills.find((entry) => entry.id === this.state.selectedSkillId);
+    if (!skill) {
+      console.warn("[SkillLabPanel] No skill selected");
+      return;
+    }
+    const supportIds = this.state.appliedSupports[skill.id] ?? [];
+    const supports = supportIds
+      .map((supportId) => this.state?.supports.find((entry) => entry.id === supportId))
+      .filter((entry): entry is SupportEntry => Boolean(entry));
+    const result = applySupports(skill, supports);
+    ActiveSkillService.assignSkill("skill1", result.skill);
+  }
+
   private promptImport(): void {
     const input = document.createElement("input");
     input.type = "file";
@@ -988,12 +1538,8 @@ export class SkillLabPanel {
   }
 
   private applyLowVisibility(enabled: boolean): void {
-    if (!this.root) {
-      return;
-    }
-    this.root.style.background = enabled
-      ? "rgba(3,4,8,0.9)"
-      : "rgba(6, 8, 14, 0.94)";
+    this.lowVisibilityEnabled = enabled;
+    this.applyLayoutMode();
   }
 
   private assignKeybind(slotId: string): void {
@@ -1184,5 +1730,41 @@ function downloadSnapshot(snapshot: SkillLabSnapshot): void {
   link.download = `skill-lab-${new Date().toISOString()}.json`;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function createDefaultShape(type: SkillComponent["shape"]["type"]): SkillComponent["shape"] {
+  switch (type) {
+    case "circle":
+      return { type: "circle", radius: 2 };
+    case "cone":
+      return { type: "cone", angle: 60, range: 5 };
+    case "line":
+      return { type: "line", length: 4, width: 1 };
+    case "projectile":
+      return { type: "projectile", speed: 12, lifetime: 1, count: 1, pattern: "straight" };
+    case "ring":
+      return { type: "ring", inner: 1, outer: 2, expandRate: 0 };
+    case "custom":
+      return { type: "custom", ref: "" };
+  }
+}
+
+function createDefaultMotion(kind: SkillComponent["motion"]["kind"]): SkillComponent["motion"] {
+  switch (kind) {
+    case "dash":
+      return { kind: "dash", params: { distance: 6, speed: 14, stopOnCollision: 0 } };
+    case "arc":
+      return { kind: "arc", params: { height: 2, speed: 8 } };
+    case "followCaster":
+      return { kind: "followCaster", params: { speed: 6 } };
+    case "followTarget":
+      return { kind: "followTarget", params: { speed: 6 } };
+    default:
+      return { kind: "none", params: {} };
+  }
+}
+
+function createDefaultDamage(): SkillComponent["damage"] {
+  return { baseMult: 1, addedFlat: 0, critOverride: 0 };
 }
 

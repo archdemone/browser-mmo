@@ -10,12 +10,12 @@ import {
   resetSkills as resetRegistrySkills,
 } from "../../skills/skills.registry";
 import {
-  listSupports as listRegistrySupports,
   SupportEntry,
   applySupports,
   validateSupport,
   SupportApplicationResult,
 } from "../../supports/supports.schema";
+import { listSupports as listRegistrySupports } from "../../supports/supports.registry";
 import {
   SkillLabSnapshot,
   clearDraftSnapshot,

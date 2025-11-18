@@ -21,12 +21,14 @@ import type { SceneBase } from "./SceneBase";
 import type { SceneManager } from "../core/SceneManager";
 import { Input } from "../core/Input";
 import { Player, type PlayerCollider } from "../gameplay/Player";
+import { ActiveSkillService } from "../gameplay/ActiveSkillService";
 import { Enemy } from "../gameplay/Enemy";
 import { CombatSystem } from "../gameplay/CombatSystem";
 import { CameraRig } from "../visuals/CameraRig";
 import { SaveService } from "../state/SaveService";
 import { HudUI, type HudState } from "../ui/HudUI";
 import { FloatingText } from "../ui/FloatingText";
+import { getDerivedSkill } from "../devtools/SkillLabManager";
 import { MaterialLibrary } from "../visuals/MaterialLibrary";
 import {
   VisualPresetManager,
@@ -167,6 +169,9 @@ export class DungeonScene implements SceneBase {
     HudUI.onClickSpawn(() => {
       void this.spawnTestEnemy();
     });
+    HudUI.onClickSkillSlot("skill1", () => {
+      this.input?.triggerVirtualSkill("skill1");
+    });
     HudUI.onClickVisualPreset(() => {
       this.cycleVisualPreset("HUD button");
     });
@@ -213,6 +218,17 @@ export class DungeonScene implements SceneBase {
 
       if (this.player.consumeAttackTrigger()) {
         this.combatSystem.playerAttack(this.player, this.enemies);
+      }
+
+      if (this.input.consumeSkill1()) {
+        const boundSkill =
+          ActiveSkillService.getSkill("skill1") ?? getDerivedSkill() ?? null;
+        if (boundSkill) {
+          console.log(`[MCP] Casting skill slot1: ${boundSkill.name}`);
+          this.combatSystem.castSkill(this.player, boundSkill, this.enemies);
+        } else {
+          console.warn("[MCP] Skill slot 1 triggered but no skill assigned");
+        }
       }
 
       this.cleanupDeadEnemies();
@@ -801,6 +817,9 @@ export class DungeonScene implements SceneBase {
       return;
     }
 
+    const boundSkill = ActiveSkillService.getSkill("skill1");
+    const skillReady = Boolean(boundSkill) && !playerDead;
+
     const profile = SaveService.getProfile();
     const hudState: HudState = {
       hp: this.player.hp,
@@ -815,12 +834,13 @@ export class DungeonScene implements SceneBase {
       cooldowns: {
         attackReady: !playerDead,
         dodgeReady: !playerDead,
-        skill1Ready: false,
+        skill1Ready: skillReady,
         skill2Ready: false,
       },
     };
 
     HudUI.update(hudState);
+    HudUI.setSkillSlotLabel("skill1", boundSkill?.name ?? "Skill 1");
   }
 
   private cycleVisualPreset(source: string): void {

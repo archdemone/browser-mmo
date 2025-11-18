@@ -1,0 +1,7 @@
+# Phase 0: (DONE) Confirmed Skill Lab layout and plan details match Phase 5 expectations.
+# Phase 1: (DONE) Hardened inspector + component flows (structured editing, nicer list, toolbar).
+# Phase 2: (DONE) Clarified supports/trace visualization and sandbox toggles.
+# Phase 3: (DONE) Added sandbox variant controls, metrics placeholders, and choice panel wiring.
+# Phase 4: (DONE) Implemented structured shape/motion/damage controls and A/B variant compare UI.
+# Phase 5: (DONE) Added Skill Lab Save button and ActiveSkillService to persist/assign skills.
+# Phase 6: (DONE) Hooked HUD input/combat to honor the bound slot and surface log feedback.

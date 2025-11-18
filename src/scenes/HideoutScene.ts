@@ -21,6 +21,7 @@ import { CameraRig } from "../visuals/CameraRig";
 import type { SceneManager } from "../core/SceneManager";
 import { HudUI, type HudState } from "../ui/HudUI";
 import { SaveService } from "../state/SaveService";
+import { ActiveSkillService } from "../gameplay/ActiveSkillService";
 import { Enemy } from "../gameplay/Enemy";
 import { createSkillLabPanel } from "../devtools/SkillLabManager";
 import { PostFXConfig } from "../visuals/PostFXConfig";
@@ -305,6 +306,9 @@ export class HideoutScene implements SceneBase {
     HudUI.onClickSpawn(() => {
       void this.spawnEnemyAt(this.getRandomSpawnPosition());
     });
+    HudUI.onClickSkillSlot("skill1", () => {
+      this.input?.triggerVirtualSkill("skill1");
+    });
     HudUI.onClickVisualPreset(() => {
       this.cycleVisualPreset("HUD button");
     });
@@ -332,6 +336,13 @@ export class HideoutScene implements SceneBase {
     this.player.setInvincible(HudUI.getInvincibilityState());
 
     this.player.update(deltaTime);
+
+    if (this.input.consumeSkill1()) {
+      const boundSkill = ActiveSkillService.getSkill("skill1");
+      console.log(
+        `[MCP] Hideout skill slot triggered: ${boundSkill ? boundSkill.name : "no skill assigned"}`
+      );
+    }
     this.updatePlayerHeight(deltaTime);
 
     if (this.enemies.length > 0) {
@@ -422,6 +433,9 @@ export class HideoutScene implements SceneBase {
       return;
     }
 
+    const boundSkill = ActiveSkillService.getSkill("skill1");
+    const skillReady = Boolean(boundSkill);
+
     const profile = SaveService.getProfile();
     const hudState: HudState = {
       hp: this.player.hp,
@@ -437,12 +451,13 @@ export class HideoutScene implements SceneBase {
       cooldowns: {
         attackReady: true,
         dodgeReady: true,
-        skill1Ready: false,
+        skill1Ready: skillReady,
         skill2Ready: false,
       },
     };
 
     HudUI.update(hudState);
+    HudUI.setSkillSlotLabel("skill1", boundSkill?.name ?? "Skill 1");
   }
 
   private async buildHideoutGeometry(): Promise<void> {

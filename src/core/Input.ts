@@ -8,6 +8,8 @@ export class Input {
   private spawnEnemyQueued: boolean = false;
   private interactQueued: boolean = false;
   private postFxToggleQueued: boolean = false;
+  private skill1Queued: boolean = false;
+  private skill2Queued: boolean = false;
   private readonly virtualMove: Set<"up" | "down" | "left" | "right"> = new Set();
   private virtualSprint: boolean = false;
   private debugAxisOverride: { x: number; z: number } | null = null;
@@ -39,6 +41,14 @@ export class Input {
       if (event.code === "KeyP" && !event.repeat) {
         this.postFxToggleQueued = true;
         event.preventDefault();
+      }
+
+      if (event.code === "KeyQ" && !event.repeat) {
+        this.skill1Queued = true;
+      }
+
+      if (event.code === "KeyW" && !event.repeat) {
+        this.skill2Queued = true;
       }
     };
 
@@ -197,6 +207,22 @@ export class Input {
     return false;
   }
 
+  consumeSkill1(): boolean {
+    if (this.skill1Queued) {
+      this.skill1Queued = false;
+      return true;
+    }
+    return false;
+  }
+
+  consumeSkill2(): boolean {
+    if (this.skill2Queued) {
+      this.skill2Queued = false;
+      return true;
+    }
+    return false;
+  }
+
   consumeSpawnEnemy(): boolean {
     if (this.spawnEnemyQueued) {
       this.spawnEnemyQueued = false;
@@ -251,6 +277,14 @@ export class Input {
     this.attackQueued = true;
   }
 
+  triggerVirtualSkill(slot: "skill1" | "skill2"): void {
+    if (slot === "skill1") {
+      this.skill1Queued = true;
+    } else {
+      this.skill2Queued = true;
+    }
+  }
+
   triggerVirtualDodge(): void {
     this.dodgeQueued = true;
   }
@@ -288,6 +322,8 @@ export class Input {
     this.virtualMove.clear();
     this.virtualSprint = false;
     this.zoomDelta = 0;
+    this.skill1Queued = false;
+    this.skill2Queued = false;
   }
 
   // TODO: Add mouse support for click-to-move navigation and ability casting hotkeys.
