@@ -97,6 +97,8 @@ interface TileCounter {
 
 export class HideoutScene implements SceneBase {
   private readonly sceneManager: SceneManager;
+  private readonly sceneMode: "hideout" | "skillLab";
+  private readonly allowDungeonEntry: boolean;
   private scene: Scene | null = null;
   private input: Input | null = null;
   private player: Player | null = null;
@@ -126,8 +128,10 @@ export class HideoutScene implements SceneBase {
     hemiIntensity: 0.55,
   };
 
-  constructor(sceneManager: SceneManager) {
+  constructor(sceneManager: SceneManager, options?: { mode?: "hideout" | "skillLab" }) {
     this.sceneManager = sceneManager;
+    this.sceneMode = options?.mode ?? "hideout";
+    this.allowDungeonEntry = this.sceneMode === "hideout";
   }
 
   private registerOccluder(mesh: Mesh, material: StandardMaterial): void {
@@ -371,8 +375,14 @@ export class HideoutScene implements SceneBase {
       // Intentionally ignored in hideout.
     }
 
-    const nearDevice = this.isPlayerNearDevice();
-    if (!this.transitionRequested && this.interactCooldown <= 0 && nearDevice && this.input.consumeInteract()) {
+    const nearDevice = this.allowDungeonEntry && this.isPlayerNearDevice();
+    if (
+      this.allowDungeonEntry &&
+      !this.transitionRequested &&
+      this.interactCooldown <= 0 &&
+      nearDevice &&
+      this.input.consumeInteract()
+    ) {
       this.tryEnterDungeon();
     }
 
@@ -1314,6 +1324,10 @@ export class HideoutScene implements SceneBase {
   }
 
   private tryEnterDungeon(): void {
+    if (!this.allowDungeonEntry) {
+      return;
+    }
+
     if (!this.player || !this.input || !this.dungeonDevice) {
       return;
     }

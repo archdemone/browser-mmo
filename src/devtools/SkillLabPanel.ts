@@ -57,8 +57,8 @@ export class SkillLabPanel {
   private root: HTMLDivElement | null = null;
   private container: HTMLElement | null = null;
   private contentWrapper: HTMLDivElement | null = null;
-  private collapsed = false;
-  private overlayVisible = true;
+  private collapsed = true;
+  private overlayVisible = false;
   private handleButton: HTMLButtonElement | null = null;
   private minimizeToggle: HTMLButtonElement | null = null;
   private lowVisibilityEnabled = false;
@@ -126,6 +126,7 @@ export class SkillLabPanel {
 
   private buildLayout(container: HTMLElement): void {
     this.root = document.createElement("div");
+    this.root.id = "skill-lab-panel";
     this.root.className = "skilllab-root";
     this.root.style.position = "fixed";
     this.root.style.left = "0";
@@ -187,7 +188,8 @@ export class SkillLabPanel {
     this.buildInspectorColumn();
     this.buildSandboxColumn();
     this.ensureHandle(container);
-    this.setCollapsed(false);
+    this.setCollapsed(true);
+    this.setOverlayVisible(false);
   }
 
   private createHeader(): HTMLDivElement {
@@ -230,6 +232,7 @@ export class SkillLabPanel {
       return;
     }
     const handle = createButton("Skill Lab", () => this.setOverlayVisible(true));
+    handle.tabIndex = -1;
     handle.style.position = "fixed";
     handle.style.top = "16px";
     handle.style.left = "16px";

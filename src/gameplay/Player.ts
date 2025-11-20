@@ -73,11 +73,11 @@ export class Player {
     this.frameDisplacement = new Vector3(0, 0, 0);
     this.fallbackForward = new Vector3(0, 0, 1);
     this.fallbackRight = new Vector3(1, 0, 0);
-    this.moveSpeed = 6;
-    this.sprintSpeed = 8.5;
-    this.accel = 18;
-    this.decel = 22;
-    this.faceTurnSpeed = 14;
+    this.moveSpeed = 8;
+    this.sprintSpeed = 12;
+    this.accel = 22;
+    this.decel = 26;
+    this.faceTurnSpeed = 16;
     this.dodgeSpeed = 14;
     this.dodgeDuration = 0.35;
     this.dodgeTimeRemaining = 0;
