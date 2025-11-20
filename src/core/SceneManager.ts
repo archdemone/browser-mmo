@@ -2,6 +2,7 @@ import type { Engine } from "babylonjs";
 import { DungeonScene } from "../scenes/DungeonScene";
 import { EditorScene } from "../scenes/EditorScene";
 import { HideoutScene } from "../scenes/HideoutScene";
+import { SkillLabScene } from "../scenes/SkillLabScene";
 import type { SceneBase } from "../scenes/SceneBase";
 import type { PlacedEntity } from "../scenes/layouts/LayoutTypes";
 import { DEBUG_EDITOR } from "./DebugFlags";
@@ -24,19 +25,26 @@ export class SceneManager {
           return;
         }
 
-        if (event.code === "F6" && this.activeScene instanceof HideoutScene) {
+        if (event.code === "F6") {
           event.preventDefault();
-          void this.goToEditor();
+          if (this.activeScene instanceof HideoutScene) {
+            void this.goToDungeon();
+          } else if (this.activeScene instanceof DungeonScene) {
+            void this.goToEditor();
+          } else if (this.activeScene instanceof EditorScene) {
+            void this.goToSkillLab();
+          } else if (this.activeScene instanceof SkillLabScene) {
+            void this.goToDungeon();
+          }
           return;
         }
 
-        if (event.code === "F6" && this.activeScene instanceof DungeonScene) {
-          event.preventDefault();
-          void this.goToEditor();
-          return;
-        }
-
-        if (event.code === "F5" && (this.activeScene instanceof EditorScene || this.activeScene instanceof DungeonScene)) {
+        if (
+          event.code === "F5" &&
+          (this.activeScene instanceof EditorScene ||
+            this.activeScene instanceof DungeonScene ||
+            this.activeScene instanceof SkillLabScene)
+        ) {
           event.preventDefault();
           void this.goToHideout();
         }
@@ -72,6 +80,13 @@ export class SceneManager {
    */
   async goToEditor(): Promise<void> {
     await this.transitionTo(() => new EditorScene(this));
+  }
+
+  /**
+   * Transition into the dedicated Skill Lab scene.
+   */
+  async goToSkillLab(): Promise<void> {
+    await this.transitionTo(() => new SkillLabScene(this));
   }
 
   /**
@@ -147,6 +162,9 @@ export class SceneManager {
     }
     if (scene instanceof EditorScene) {
       return "EditorScene";
+    }
+    if (scene instanceof SkillLabScene) {
+      return "SkillLabScene";
     }
     if (scene instanceof DungeonScene) {
       return "DungeonScene";

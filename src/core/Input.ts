@@ -105,6 +105,12 @@ export class Input {
     };
 
     this.wheelHandler = (event: WheelEvent) => {
+      const target = event.target as HTMLElement | null;
+      const interactingWithUi = target?.closest("#hud-root, #skill-lab-panel, #visual-control-panel") ?? null;
+      if (interactingWithUi) {
+        return;
+      }
+
       // Accumulate zoom delta (negative delta = zoom in, positive = zoom out)
       this.zoomDelta += event.deltaY;
     };

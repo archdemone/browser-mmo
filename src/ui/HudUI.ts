@@ -67,7 +67,8 @@ class HudUIImpl {
   private visualControlDefinitions: Map<string, VisualControlDefinition> = new Map();
   private visualControlChangeHandler: ((id: VisualControlId, value: number) => void) | null = null;
   private gameplayHudContainer: HTMLDivElement | null = null;
-  private visualControlPanelVisible: boolean = true;
+  private visualControlPanelVisible: boolean = false;
+  private visualControlToggle: HTMLButtonElement | null = null;
 
   init(): void {
     if (typeof document === "undefined") {
@@ -341,6 +342,7 @@ class HudUIImpl {
     document.body.appendChild(root);
     this.root = root;
 
+    this.ensureVisualControlToggle();
     this.attachEventHandlers();
   }
 
@@ -489,6 +491,7 @@ class HudUIImpl {
     if (this.visualControlPanel) {
       this.visualControlPanel.style.display = visible ? "flex" : "none";
     }
+    this.updateVisualControlToggleLabel();
   }
 
   isVisualControlPanelVisible(): boolean {
@@ -659,6 +662,45 @@ class HudUIImpl {
     this.visualControlList = list;
   }
 
+  private ensureVisualControlToggle(): void {
+    if (!this.root || this.visualControlToggle) {
+      return;
+    }
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.style.position = "absolute";
+    toggle.style.top = "16px";
+    toggle.style.right = "16px";
+    toggle.style.padding = "6px 12px";
+    toggle.style.background = "rgba(20, 22, 28, 0.9)";
+    toggle.style.border = "1px solid rgba(255, 255, 255, 0.24)";
+    toggle.style.borderRadius = "6px";
+    toggle.style.color = "#f3f5ff";
+    toggle.style.fontSize = "12px";
+    toggle.style.cursor = "pointer";
+    toggle.style.pointerEvents = "auto";
+    toggle.style.zIndex = "1000";
+    toggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.setVisualControlPanelVisible(!this.visualControlPanelVisible);
+    });
+
+    this.root.appendChild(toggle);
+    this.visualControlToggle = toggle;
+    this.updateVisualControlToggleLabel();
+  }
+
+  private updateVisualControlToggleLabel(): void {
+    if (!this.visualControlToggle) {
+      return;
+    }
+    this.visualControlToggle.textContent = this.visualControlPanelVisible
+      ? "Hide Visual Controls"
+      : "Show Visual Controls";
+  }
+
   private handleVisualControlInput(id: VisualControlId, value: number): void {
     this.updateVisualControlValue(id, value);
 
@@ -731,6 +773,7 @@ class HudUIImpl {
     this.visualControlChangeHandler = null;
     this.fxSliderValue = null;
     this.gameplayHudContainer = null;
+    this.visualControlToggle = null;
     this.init();
   }
 

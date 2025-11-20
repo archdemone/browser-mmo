@@ -186,7 +186,6 @@ async function loadCharacter(scene: Scene, options: CharacterLoadOptions): Promi
   movementRoot.rotationQuaternion = null;
   movementRoot.rotation.copyFrom(initialRotation);
   movementRoot.scaling.copyFrom(initialScaling);
-  movementRoot.rotation.y += Math.PI;
 
   rootMesh.setParent(movementRoot);
   rootMesh.position.setAll(0);
